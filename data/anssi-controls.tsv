@@ -1,0 +1,77 @@
+﻿Id	Levels	Title
+vuln_adcs_control	1	Permissions dangereuses sur les conteneurs de certificats (chemins de contrôle)
+vuln_adcs_template_control	1,2	Permissions dangereuses sur les objets de modèles de certificats (chemins de contrôle)
+vuln_adcs_template_auth_enroll_with_name	1	Permissions d'enrôlement dangereuses sur des modèles de certificats permettant l'authentification
+vuln_certificates_vuln	1,2,3	Certificats faibles ou vulnérables
+vuln_critical_objects	1	Objets critiques non disponibles
+vuln_dc_inconsistent_uac	1	Contrôleurs de domaine incohérents
+vuln_dc_obsolete	1	DC/RODC ayant un système d'exploitation obsolète
+vuln_delegation_a2d2	1	Délégation d'authentification contrainte vers un service privilégié
+vuln_delegation_sourcedeleg	1	Délégation contrainte basée sur la ressource vers des services privilégiés
+vuln_delegation_t2a4d	1	Délégation d'authentification contrainte avec transition de protocole vers un service privilégié
+vuln_delegation_t4d	1	Délégation d'authentification non contrainte
+vuln_display_specifier	1	Présence de Display Specifiers dangereux
+vuln_dnsadmins	1	Permissions dangereuses sur le groupe DnsAdmins
+vuln_dnszone_bad_prop	1,3	Zones DNS mal configurées
+vuln_dont_expire_priv	1	Comptes privilégiés dont le mot de passe n'expire jamais
+vuln_dsheuristics_bad	1,2,4	Paramètres dSHeuristics dangereux
+vuln_functional_level	1,3,4	Niveaux fonctionnels de la forêt et des domaines insuffisants
+vuln_kerberos_properties_preauth_priv	1	Comptes privilégiés sans préauthentification Kerberos
+vuln_password_change_dc_no_change	1	Contrôleurs de domaine dont le mot de passe de compte d'ordinateur est inchangé depuis plus de 45 jours
+vuln_password_change_inactive_dc	1	Contrôleurs de domaines inactifs
+vuln_password_change_priv	1	Comptes privilégiés dont le mot de passe est inchangé depuis plus de 3 ans
+vuln_permissions_adminsdholder	1,2	Permissions dangereuses sur l'objet adminSDHolder
+vuln_permissions_dc	1,2	Permissions dangereuses sur les objets contrôleurs de domaine (chemins de contrôle)
+vuln_permissions_dfsr_sysvol	1,2	Permissions dangereuses sur les objets des paramètres DFSR du SYSVOL (chemins de contrôle)
+vuln_permissions_dpapi	1,2	Permissions dangereuses sur les objets de clés DPAPI (chemins de contrôle)
+vuln_permissions_gmsa_keys	1,2	Permissions dangereuses vers les objets de clés gMSA (chemins de contrôle)
+vuln_permissions_naming_context	1,2	Permissions dangereuses sur la racine des naming contexts (chemins de contrôle)
+vuln_permissions_schema	1,2	Permissions dangereuses sur les objets du schéma (chemins de contrôle)
+vuln_permissions_msdns	1	Permissions dangereuses sur les objets serveurs MicrosoftDNS (chemins de contrôle)
+vuln_permissions_gpo_priv	1	Permissions dangereuses sur les objets de GPO s'appliquant aux membres des groupes privilégiés (chemins de contrôle)
+vuln_primary_group_id_1000	1	Comptes avec un PrimaryGroupID inférieur à 1000
+vuln_privileged_members	1,2	Nombre important de membres des groupes privilégiés
+vuln_privileged_members_perm	1,2	Permissions dangereuses sur des membres de groupes privilégiés (chemins de contrôle)
+vuln_spn_priv	1	Comptes privilégiés avec SPN
+vuln_trusts_domain_notfiltered	1	Relations d'approbation sortante de type domaine non filtré
+vuln_trusts_forest_sidhistory	1	Relations d'approbation sortantes de type forêt avec sID History activé
+vuln_user_accounts_dormant	1	Nombre important de comptes actifs inutilisés
+vuln_adupdate_bad	2	Mauvaises versions de l'Active Directory
+vuln_compatible_2000_anonymous	2	Le groupe "Pre-Windows 2000 Compatible Access" contient "Anonymous"
+vuln_dc_crypto	2,3,4	Algorithmes de chiffrement supportés par les DC/RODC
+vuln_dont_expire	2	Comptes dont le mot de passe n'expire jamais
+vuln_guest	2	Compte Invité actif
+vuln_kerberos_properties_deskey	2	Comptes utilisateurs avec un chiffrement Kerberos faible
+vuln_kerberos_properties_preauth	2	Comptes sans préauthentification Kerberos
+vuln_krbtgt	2	Mot de passe du compte krbtgt inchangé depuis plus d'un an
+vuln_password_change_server_no_change_90	2	Serveurs dont le mot de passe de compte d'ordinateur est inchangé depuis plus de 90 jours
+vuln_password_change_cluster_no_change_3years	2	Comptes utilisés dans un cluster de basculement Windows Server dont le mot de passe est inchangé depuis plus de 3 ans
+vuln_password_change_msa_no_change_90	2	Comptes de service managés dont le mot de passe de compte est inchangé depuis plus de 90 jours
+vuln_permissions_gpo_container_priv	2	Permissions dangereuses sur des conteneurs d'objets privilégiés (chemins de contrôle)
+vuln_privileged_members_password	2	Comptes membres de groupes privilégiés avec une mauvaise politique de mot de passe
+vuln_privileged_members_no_admincount	2	Comptes membres de groupes privilégiés ayant un attribut adminCount vide ou valant 0
+vuln_rodc_priv_revealed	2	Comptes ou groupes privilégiés révélés par des RODC
+vuln_sidhistory_dangerous	2	Comptes ou groupes ayant un historique de SID d'apparence non conforme
+vuln_sysvol_ntfrs	2	Utilisation de NTFRS pour la réplication du SYSVOL
+vuln_trusts_accounts	2	Comptes de trust dont le mot de passe est inchangé depuis plus d'un an
+vuln_compatible_2000_not_default	3	Comptes ou groupes membres de "Pre-Windows 2000 Compatible Access"
+vuln_kerberos_properties_encryption	3	Algorithmes de chiffrement supportés par les comptes de service
+vuln_owner	3	Objets ayant un propriétaire inadapté
+vuln_password_change_inactive_servers	3	Serveurs inactifs
+vuln_password_change_server_no_change_45	3	Serveurs dont le mot de passe de compte d'ordinateur est inchangé depuis plus de 45 jours
+vuln_primary_group_id_nochange	3	Comptes avec un PrimaryGroupID modifié
+vuln_protected_users	3	Comptes privilégiés non membres du groupe Protected Users
+vuln_reversible_password_priv_uac	3	Comptes privilégiés ayant leur mot de passe stocké de manière réversible
+vuln_reversible_password_priv_namingcontext	3	[BETA] Mots de passe stockés en clair à cause d'un attribut à la racine du naming context
+vuln_rodc_never_reveal	3	Configuration dangereuse des contrôleurs de domaine en lecture seule (RODC) (neverReveal)
+vuln_rodc_reveal	3	Comptes ou groupes privilégiés présents dans les attributs de révélation des RODC
+vuln_rodc_allowed_group	3	Configuration dangereuse des groupes de réplication pour les contrôleurs de domaine en lecture seule (RODC) (allow)
+vuln_rodc_denied_group	3	Configuration dangereuse des groupes de réplication pour les contrôleurs de domaine en lecture seule (RODC) (denied)
+vuln_rodc_orphan_krbtgt	3	Comptes krbtgt de RODC orphelins
+vuln_sd_failed_sd_read_on_priv	3	Comptes privilégiés pour lesquels des informations critiques sont manquantes
+vuln_sidhistory_present	3	Comptes ou groupes ayant un historique de SID
+vuln_trusts_tgt_deleg	3	Relations d'approbation entrante avec délégation
+vuln_group_loop	4	Présences de boucles d'imbrication de groupes
+vuln_silo_priv	4	Membres des groupes privilégiés hors silo d'authentification
+vuln_smartcard_expire_passwords	4	Comptes utilisateurs de carte à puce sans expiration de mot de passe
+vuln_user_accounts_machineaccountquota	4	Ajout de machines au domaine non limité

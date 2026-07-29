@@ -1,0 +1,19 @@
+# Extraits ORADAD et données Active Directory sensibles
+/oradad-out/
+/Vertou-out/
+/*-out/
+
+# Rapports générés
+/output/
+/output-*/
+
+# Journaux et fichiers temporaires
+*.log
+*.tmp
+*.bak
+*~
+
+# Artefacts PowerShell et éditeurs
+*.clixml
+.vscode/
+.idea/
