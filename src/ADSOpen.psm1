@@ -628,6 +628,11 @@ function New-ADSOpenHtml {
     param($Audit)
     $cardById = @{}
     foreach ($control in $Audit.Controls) {
+        $statusMarkup = switch ($control.Status) {
+            'Passed' { '<span class="status-icon status-passed" role="img" aria-label="Validé" title="Validé">&#10003;</span>' }
+            'Failed' { '<span class="status-icon status-failed" role="img" aria-label="Échec" title="Échec">&#10005;</span>' }
+            default  { '<span class="status-icon status-unknown" role="img" aria-label="Non évalué" title="Non évalué">?</span>' }
+        }
         $levelBadges = foreach ($level in $control.Levels) {
             $failedClass = if ($control.Status -eq 'Failed' -and $level -in @($control.FailedLevels)) { ' failed-level' } else { '' }
             $title = if ($failedClass) { "Seuil ANSSI $level en échec" } else { "Niveau ANSSI $level applicable" }
@@ -644,7 +649,7 @@ function New-ADSOpenHtml {
         } else { '' }
         $cardById[$control.Id] = @"
 <article class="control $($control.Status.ToLowerInvariant())">
-  <header><code><a href="$(ConvertTo-HtmlEncoded $control.Reference)" target="_blank" rel="noopener">$(ConvertTo-HtmlEncoded $control.Id)</a></code><span>$($control.Status)</span></header>
+  <header><code><a href="$(ConvertTo-HtmlEncoded $control.Reference)" target="_blank" rel="noopener">$(ConvertTo-HtmlEncoded $control.Id)</a></code>$statusMarkup</header>
   <h3>$(ConvertTo-HtmlEncoded $control.Title)</h3>
   <p class="levels"><b>Niveau(x) :</b> $($levelBadges -join '')$(if ($control.Status -eq 'Failed') {" · <b>Seuil(s) en échec :</b> $(@($control.FailedLevels) -join ', ')"}) · <b>Source :</b> $(ConvertTo-HtmlEncoded $control.DataSource)</p>
   $details
@@ -698,6 +703,7 @@ main{max-width:1180px;margin:auto;padding:28px}.summary{display:flex;gap:16px;fl
 .summary div{min-width:150px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}
 .control{border-left:6px solid #8792a2}.control.failed{border-color:#c62828;background:#fff3f3}.control.passed{border-color:#2e7d32}.control.notevaluated{border-color:#6c757d;background:#f8f9fa}
 .control header{display:flex;justify-content:space-between}.control header span{font-weight:700}.control h3{margin-bottom:8px}
+.status-icon{display:inline-grid;place-items:center;width:1.65em;height:1.65em;border-radius:50%;font-size:1.15rem;font-weight:800;line-height:1}.status-passed{background:#e6f4e8;color:#1b7f32}.status-failed{background:#fde8e8;color:#c62828}.status-unknown{background:#eceff3;color:#5f6872}
 .control code a{color:inherit}.control.notevaluated header span{color:#5f6872}
 .level{display:inline-grid;place-items:center;min-width:1.65em;height:1.65em;margin:0 .18em;border-radius:50%;font-weight:700}
 .level1{background:#dc3545;color:#fff}.level2{background:#ffa500;color:#000}.level3{background:#f0e68c;color:#000}
