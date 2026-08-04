@@ -20,7 +20,8 @@ function Get-ADSOpenAclAnalysis {
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Groups,
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Attributes,
         [Parameter(Mandatory)][string]$DomainSid,
-        [Parameter(Mandatory)][string[]]$Tier0Dns
+        [Parameter(Mandatory)][string[]]$Tier0Dns,
+        [switch]$IncludePaths
     )
 
     $sidToDn = @{}
@@ -57,7 +58,9 @@ function Get-ADSOpenAclAnalysis {
 
     $relations = [System.Collections.Generic.List[object]]::new()
     $parseErrors = [System.Collections.Generic.List[object]]::new()
+    $descriptorCount = 0
     foreach ($object in $Objects) {
+        if ($object.nTSecurityDescriptor) { $descriptorCount++ }
         if (-not $object.dn -or -not $object.nTSecurityDescriptor) { continue }
         $bytes = Convert-HexToBytes ([string]$object.nTSecurityDescriptor)
         if (-not $bytes) {
@@ -148,43 +151,47 @@ function Get-ADSOpenAclAnalysis {
         }
     }
 
-    # Graphe : appartenance à un groupe et relations ACL dangereuses.
-    $adjacency = @{}
-    function Add-GraphEdge([string]$From, [string]$To, [string]$Kind) {
-        if (-not $From -or -not $To) { return }
-        if (-not $adjacency.ContainsKey($From)) { $adjacency[$From] = [System.Collections.Generic.List[object]]::new() }
-        $adjacency[$From].Add([pscustomobject]@{ To = $To; Kind = $Kind })
-    }
-    foreach ($group in $Groups) {
-        foreach ($member in @([string]$group.member -split ';' | Where-Object { $_ })) {
-            Add-GraphEdge $member ([string]$group.dn) 'MemberOf'
-        }
-    }
-    foreach ($relation in $relations) {
-        Add-GraphEdge ([string]$relation.SourceDn) ([string]$relation.TargetDn) ([string]$relation.Right)
-    }
-
-    $tier0Set = [System.Collections.Generic.HashSet[string]]::new($Tier0Dns, [System.StringComparer]::OrdinalIgnoreCase)
     $paths = [System.Collections.Generic.List[object]]::new()
-    foreach ($source in @($adjacency.Keys)) {
-        if ($tier0Set.Contains($source)) { continue }
-        $queue = [System.Collections.Generic.Queue[object]]::new()
-        $visited = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-        $queue.Enqueue([pscustomobject]@{ Node = $source; Nodes = @($source); Edges = @() })
-        [void]$visited.Add($source)
-        while ($queue.Count -and $visited.Count -lt 5000) {
-            $state = $queue.Dequeue()
-            if ($state.Nodes.Count -gt 8) { continue }
-            if (-not $adjacency.ContainsKey([string]$state.Node)) { continue }
-            foreach ($edge in $adjacency[$state.Node].ToArray()) {
-                $nodes = @($state.Nodes) + $edge.To
-                $edges = @($state.Edges) + $edge.Kind
-                if ($tier0Set.Contains($edge.To)) {
-                    $paths.Add([pscustomobject]@{ Source = $source; Target = $edge.To; Nodes = $nodes; Edges = $edges })
-                    continue
-                }
-                if ($visited.Add($edge.To)) {
-                    $queue.Enqueue([pscustomobject]@{ Node = $edge.To; Nodes = $nodes; Edges = $edges })
+    if ($IncludePaths) {
+        # La construction exhaustive des chemins est coûteuse sur les grands
+        # domaines. Elle reste disponible à la demande, mais les contrôles du
+        # rapport utilisent les relations ACL directes et n'en dépendent pas.
+        $adjacency = @{}
+        function Add-GraphEdge([string]$From, [string]$To, [string]$Kind) {
+            if (-not $From -or -not $To) { return }
+            if (-not $adjacency.ContainsKey($From)) { $adjacency[$From] = [System.Collections.Generic.List[object]]::new() }
+            $adjacency[$From].Add([pscustomobject]@{ To = $To; Kind = $Kind })
+        }
+        foreach ($group in $Groups) {
+            foreach ($member in @([string]$group.member -split ';' | Where-Object { $_ })) {
+                Add-GraphEdge $member ([string]$group.dn) 'MemberOf'
+            }
+        }
+        foreach ($relation in $relations) {
+            Add-GraphEdge ([string]$relation.SourceDn) ([string]$relation.TargetDn) ([string]$relation.Right)
+        }
+
+        $tier0Set = [System.Collections.Generic.HashSet[string]]::new($Tier0Dns, [System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($source in @($adjacency.Keys)) {
+            if ($tier0Set.Contains($source)) { continue }
+            $queue = [System.Collections.Generic.Queue[object]]::new()
+            $visited = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            $queue.Enqueue([pscustomobject]@{ Node = $source; Nodes = @($source); Edges = @() })
+            [void]$visited.Add($source)
+            while ($queue.Count -and $visited.Count -lt 5000) {
+                $state = $queue.Dequeue()
+                if ($state.Nodes.Count -gt 8) { continue }
+                if (-not $adjacency.ContainsKey([string]$state.Node)) { continue }
+                foreach ($edge in $adjacency[$state.Node].ToArray()) {
+                    $nodes = @($state.Nodes) + $edge.To
+                    $edges = @($state.Edges) + $edge.Kind
+                    if ($tier0Set.Contains($edge.To)) {
+                        $paths.Add([pscustomobject]@{ Source = $source; Target = $edge.To; Nodes = $nodes; Edges = $edges })
+                        continue
+                    }
+                    if ($visited.Add($edge.To)) {
+                        $queue.Enqueue([pscustomobject]@{ Node = $edge.To; Nodes = $nodes; Edges = $edges })
+                    }
                 }
             }
         }
@@ -194,8 +201,8 @@ function Get-ADSOpenAclAnalysis {
         Relations   = @($relations)
         Paths       = @($paths)
         ParseErrors = @($parseErrors)
-        ObjectCount = @($Objects).Count
-        ParsedCount = @($Objects | Where-Object nTSecurityDescriptor).Count - $parseErrors.Count
+        ObjectCount = $Objects.Count
+        ParsedCount = $descriptorCount - $parseErrors.Count
     }
 }
 

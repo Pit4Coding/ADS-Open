@@ -337,19 +337,35 @@ function Get-ADSOpenControls {
 
     function Add-AclControl {
         param([string]$Id, [int[]]$Levels, [string]$Title, [object[]]$Findings, [string]$Recommendation)
-        $compressed = @($Findings | Group-Object SourceSid,SourceDn,TargetDn,Inherited,AccessMask,ObjectType |
-            ForEach-Object {
-                $first = $_.Group | Select-Object -First 1
-                [pscustomobject]@{
-                    SourceSid=$first.SourceSid
-                    SourceDn=$first.SourceDn
-                    TargetDn=$first.TargetDn
-                    Right=(($_.Group.Right | Sort-Object -Unique) -join ', ')
-                    Inherited=$first.Inherited
-                    AccessMask=$first.AccessMask
-                    ObjectType=$first.ObjectType
+        # Group-Object conserve une copie logique de chaque groupe et peut doubler
+        # le pic mémoire. Cette agrégation incrémentale produit le même constat.
+        $buckets = [ordered]@{}
+        foreach ($finding in $Findings) {
+            $key = @(
+                [string]$finding.SourceSid, [string]$finding.SourceDn,
+                [string]$finding.TargetDn, [string]$finding.Inherited,
+                [string]$finding.AccessMask, [string]$finding.ObjectType
+            ) -join [char]31
+            if (-not $buckets.Contains($key)) {
+                $buckets[$key] = [pscustomobject]@{
+                    First = $finding
+                    Rights = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
                 }
-            })
+            }
+            [void]$buckets[$key].Rights.Add([string]$finding.Right)
+        }
+        $compressed = @($buckets.Values | ForEach-Object {
+            $first = $_.First
+            [pscustomobject]@{
+                SourceSid=$first.SourceSid
+                SourceDn=$first.SourceDn
+                TargetDn=$first.TargetDn
+                Right=(@($_.Rights) | Sort-Object) -join ', '
+                Inherited=$first.Inherited
+                AccessMask=$first.AccessMask
+                ObjectType=$first.ObjectType
+            }
+        })
         $results.Add((New-ControlResult $Id $Levels $Title `
             $(if (($compressed | Measure-Object).Count) { 'Failed' } else { 'Passed' }) $compressed `
             $Recommendation 'nTSecurityDescriptor (partitions ORADAD)' 'Implemented'))
@@ -359,26 +375,35 @@ function Get-ADSOpenControls {
     # dans AIA et ses listes de révocation dans son point CDP. L'exception est
     # volontairement bornée au compte machine indiqué par dNSHostName, à la CA
     # correspondante et à ces deux objets de publication seulement.
+    $computerByHost = @{}
+    foreach ($computer in $computers) {
+        if ($computer.dNSHostName) { $computerByHost[[string]$computer.dNSHostName] = $computer }
+        if ($computer.sAMAccountName) { $computerByHost[([string]$computer.sAMAccountName).TrimEnd('$')] = $computer }
+    }
+    $caPublicationExceptions = [System.Collections.Generic.List[object]]::new()
+    foreach ($service in $enrollmentServices) {
+        $caName = ([string]$service.dn -split ',', 2)[0] -replace '^(?i)CN=', ''
+        $caHost = ([string]$service.dNSHostName -split '\.', 2)[0]
+        $hostComputer = $computerByHost[[string]$service.dNSHostName]
+        if (-not $hostComputer) { $hostComputer = $computerByHost[$caHost] }
+        if ($hostComputer) {
+            $caPublicationExceptions.Add([pscustomobject]@{
+                SourceDn = [string]$hostComputer.dn
+                AiaPrefix = "CN=$caName,CN=AIA,CN=Public Key Services,"
+                CdpPrefix = "CN=$caName,CN=$caHost,CN=CDP,CN=Public Key Services,"
+            })
+        }
+    }
     $caPublicationRelations = @($actionableAclRelations | Where-Object {
         $relation = $_
         $isExpectedCaPublication = $false
-        foreach ($service in $enrollmentServices) {
-            $caName = ([string]$service.dn -split ',', 2)[0] -replace '^(?i)CN=', ''
-            $caHost = ([string]$service.dNSHostName -split '\.', 2)[0]
-            $hostComputer = $computers | Where-Object {
-                ([string]$_.dNSHostName).Equals([string]$service.dNSHostName,
-                    [System.StringComparison]::OrdinalIgnoreCase) -or
-                ([string]$_.sAMAccountName).TrimEnd('$').Equals($caHost,
-                    [System.StringComparison]::OrdinalIgnoreCase)
-            } | Select-Object -First 1
-            if (-not $hostComputer -or
-                -not ([string]$relation.SourceDn).Equals([string]$hostComputer.dn,
+        foreach ($exception in $caPublicationExceptions) {
+            if (-not ([string]$relation.SourceDn).Equals([string]$exception.SourceDn,
                     [System.StringComparison]::OrdinalIgnoreCase)) { continue }
-
-            $escapedCaName = [regex]::Escape($caName)
-            $escapedHost = [regex]::Escape($caHost)
-            if ($relation.TargetDn -match "(?i)^CN=$escapedCaName,CN=AIA,CN=Public Key Services," -or
-                $relation.TargetDn -match "(?i)^CN=$escapedCaName,CN=$escapedHost,CN=CDP,CN=Public Key Services,") {
+            if ([string]$relation.TargetDn.StartsWith($exception.AiaPrefix,
+                    [System.StringComparison]::OrdinalIgnoreCase) -or
+                [string]$relation.TargetDn.StartsWith($exception.CdpPrefix,
+                    [System.StringComparison]::OrdinalIgnoreCase)) {
                 $isExpectedCaPublication = $true
                 break
             }

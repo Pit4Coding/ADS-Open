@@ -28,7 +28,7 @@ $attributes = @([pscustomobject]@{
 })
 
 $analysis = Get-ADSOpenAclAnalysis -Objects $objects -Principals $principals `
-    -Groups @() -Attributes $attributes -DomainSid $domainSid -Tier0Dns @($targetDn)
+    -Groups @() -Attributes $attributes -DomainSid $domainSid -Tier0Dns @($targetDn) -IncludePaths
 
 if (@($analysis.Relations | Where-Object Right -eq 'GenericAll').Count -ne 1) {
     throw 'GenericAll non détecté ou principal administratif non filtré'
