@@ -12,6 +12,27 @@ function Convert-HexToBytes {
     } catch { return $null }
 }
 
+function Expand-AdGenericAccessMask {
+    param([int64]$Mask)
+
+    # Mappage GENERIC_* du service d'annuaire. Les ACE de refus portent
+    # souvent un droit AD spécifique alors que l'ACE d'autorisation utilise
+    # GenericAll/GenericWrite : les deux doivent être comparés après expansion.
+    if (($Mask -band 0x10000000) -ne 0) { # GENERIC_ALL
+        $Mask = ($Mask -band (-bnot [int64]0x10000000)) -bor [int64]0x000F01FF
+    }
+    if (($Mask -band 0x40000000) -ne 0) { # GENERIC_WRITE
+        $Mask = ($Mask -band (-bnot [int64]0x40000000)) -bor [int64]0x00020028
+    }
+    if (($Mask -band 0x80000000) -ne 0) { # GENERIC_READ
+        $Mask = ($Mask -band (-bnot [int64]0x80000000)) -bor [int64]0x00020094
+    }
+    if (($Mask -band 0x20000000) -ne 0) { # GENERIC_EXECUTE
+        $Mask = ($Mask -band (-bnot [int64]0x20000000)) -bor [int64]0x00020004
+    }
+    return $Mask
+}
+
 function Get-ADSOpenAclAnalysis {
     [CmdletBinding()]
     param(
@@ -96,7 +117,8 @@ function Get-ADSOpenAclAnalysis {
                 $denyType = $denyAce.ObjectAceType.ToString().ToLowerInvariant()
             }
             $denyKey = "$($denyAce.SecurityIdentifier.Value)|$denyType"
-            $denyMasks[$denyKey] = [int64]$denyMasks[$denyKey] -bor [int64]$denyAce.AccessMask
+            $denyMask = Expand-AdGenericAccessMask ([int64]$denyAce.AccessMask)
+            $denyMasks[$denyKey] = [int64]$denyMasks[$denyKey] -bor $denyMask
         }
         foreach ($ace in $sd.DiscretionaryAcl) {
             if ($ace.AceType -notin @(
@@ -106,7 +128,8 @@ function Get-ADSOpenAclAnalysis {
             if (([int]$ace.AceFlags -band [int][System.Security.AccessControl.AceFlags]::InheritOnly) -ne 0) { continue }
             $sid = $ace.SecurityIdentifier.Value
             if ($safeSids.Contains($sid)) { continue }
-            $mask = [int64]$ace.AccessMask
+            $rawMask = [int64]$ace.AccessMask
+            $mask = Expand-AdGenericAccessMask $rawMask
             $objectType = ''
             if ($ace -is [System.Security.AccessControl.ObjectAce] -and
                 ([int]$ace.ObjectAceFlags -band [int][System.Security.AccessControl.ObjectAceFlags]::ObjectAceTypePresent)) {
@@ -117,10 +140,11 @@ function Get-ADSOpenAclAnalysis {
             $broadDeny = "$sid|"
             if ($denyMasks.ContainsKey($specificDeny)) { $mask = $mask -band (-bnot [int64]$denyMasks[$specificDeny]) }
             if ($objectType -and $denyMasks.ContainsKey($broadDeny)) { $mask = $mask -band (-bnot [int64]$denyMasks[$broadDeny]) }
-            if (($mask -band 0x000F01FF) -eq 0x000F01FF -or ($mask -band 0x10000000)) { $rights.Add('GenericAll') }
+            if (($mask -band 0x000F01FF) -eq 0x000F01FF) { $rights.Add('GenericAll') }
             if ($mask -band 0x00040000) { $rights.Add('WriteDacl') }
             if ($mask -band 0x00080000) { $rights.Add('WriteOwner') }
-            if ($mask -band 0x40000000) { $rights.Add('GenericWrite') }
+            if (($rawMask -band 0x40000000) -ne 0 -and
+                ($mask -band 0x00020028) -eq 0x00020028) { $rights.Add('GenericWrite') }
             if ($mask -band 0x00000001) { $rights.Add('CreateChild') }
             if ($mask -band 0x00000002) { $rights.Add('DeleteChild') }
             if ($mask -band 0x00000020) {

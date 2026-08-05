@@ -43,4 +43,34 @@ if ($analysis.ParseErrors.Count) {
     throw 'Erreur de décodage inattendue'
 }
 
+# Un refus spécifique doit neutraliser le droit, y compris lorsque celui-ci
+# provient d'une autorisation générique qui doit d'abord être développée.
+$denyDeleteSddl = 'O:SYD:(D;;DC;;;WD)(A;;GA;;;WD)'
+$denyDeleteObjects = @([pscustomobject]@{
+    dn = $targetDn
+    nTSecurityDescriptor = Convert-SddlToHex $denyDeleteSddl
+})
+$denyDeleteAnalysis = Get-ADSOpenAclAnalysis -Objects $denyDeleteObjects -Principals $principals `
+    -Groups @() -Attributes $attributes -DomainSid $domainSid -Tier0Dns @($targetDn)
+if (@($denyDeleteAnalysis.Relations | Where-Object Right -eq 'DeleteChild').Count) {
+    throw 'DeleteChild refusé a été comptabilisé comme accordé'
+}
+if (@($denyDeleteAnalysis.Relations | Where-Object Right -eq 'GenericAll').Count) {
+    throw 'GenericAll ne doit pas subsister intégralement après un refus DeleteChild'
+}
+if (-not @($denyDeleteAnalysis.Relations | Where-Object Right -eq 'WriteDacl').Count) {
+    throw 'Les autres droits réellement accordés par GenericAll doivent être conservés'
+}
+
+$denyExactSddl = "O:SYD:(D;;DC;;;$attackerSid)(A;;DC;;;$attackerSid)"
+$denyExactObjects = @([pscustomobject]@{
+    dn = $targetDn
+    nTSecurityDescriptor = Convert-SddlToHex $denyExactSddl
+})
+$denyExactAnalysis = Get-ADSOpenAclAnalysis -Objects $denyExactObjects -Principals $principals `
+    -Groups @() -Attributes $attributes -DomainSid $domainSid -Tier0Dns @($targetDn)
+if ($denyExactAnalysis.Relations.Count) {
+    throw 'Une autorisation entièrement neutralisée par un refus ne doit produire aucune relation'
+}
+
 "OK - moteur ACL: $($analysis.Relations.Count) relations, $($analysis.Paths.Count) chemin(s)"
