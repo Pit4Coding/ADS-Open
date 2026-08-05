@@ -33,6 +33,50 @@ function Expand-AdGenericAccessMask {
     return $Mask
 }
 
+function Get-AceBinaryKey {
+    param([Parameter(Mandatory)]$Ace)
+
+    $bytes = New-Object byte[] $Ace.BinaryLength
+    $Ace.GetBinaryForm($bytes, 0)
+    return [Convert]::ToBase64String($bytes)
+}
+
+function Test-ADSOpenAdminSdHolderProtection {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Object,
+        [Parameter(Mandatory)]$AdminSdHolder
+    )
+
+    $objectBytes = Convert-HexToBytes ([string]$Object.nTSecurityDescriptor)
+    $adminBytes = Convert-HexToBytes ([string]$AdminSdHolder.nTSecurityDescriptor)
+    if (-not $objectBytes -or -not $adminBytes) { return $false }
+    try {
+        $objectSd = New-Object System.Security.AccessControl.RawSecurityDescriptor($objectBytes, 0)
+        $adminSd = New-Object System.Security.AccessControl.RawSecurityDescriptor($adminBytes, 0)
+    } catch { return $false }
+
+    if (($objectSd.ControlFlags -band
+        [System.Security.AccessControl.ControlFlags]::DiscretionaryAclProtected) -eq 0) { return $false }
+    if (-not $objectSd.DiscretionaryAcl -or -not $adminSd.DiscretionaryAcl) { return $false }
+
+    $adminAces = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($ace in $adminSd.DiscretionaryAcl) { [void]$adminAces.Add((Get-AceBinaryKey $ace)) }
+    $sendToGuid = [guid]'ab721a55-1e2f-11d0-9819-00aa0040529b'
+    foreach ($ace in $objectSd.DiscretionaryAcl) {
+        if ($adminAces.Contains((Get-AceBinaryKey $ace))) { continue }
+        $sid = if ($ace.PSObject.Properties['SecurityIdentifier']) {
+            [string]$ace.SecurityIdentifier.Value
+        } else { '' }
+        if ($sid -in @('S-1-5-10','S-1-5-9')) { continue }
+        if ($ace -is [System.Security.AccessControl.ObjectAce] -and
+            ([int64]$ace.AccessMask -band 0x00000100) -ne 0 -and
+            $ace.ObjectAceType -eq $sendToGuid) { continue }
+        return $false
+    }
+    return $true
+}
+
 function Get-ADSOpenAclAnalysis {
     [CmdletBinding()]
     param(
@@ -230,4 +274,4 @@ function Get-ADSOpenAclAnalysis {
     }
 }
 
-Export-ModuleMember -Function Get-ADSOpenAclAnalysis
+Export-ModuleMember -Function Get-ADSOpenAclAnalysis,Test-ADSOpenAdminSdHolderProtection

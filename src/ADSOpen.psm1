@@ -293,6 +293,20 @@ function Get-ADSOpenControls {
     foreach ($object in $allObjects) {
         if ($object.dn) { $objectByDn[$object.dn.ToLowerInvariant()] = $object }
     }
+    $adminSdHolderDn = "CN=AdminSDHolder,CN=System,$domainDn"
+    $adminSdHolderObject = $objectByDn[$adminSdHolderDn.ToLowerInvariant()]
+    $adminSdHolderProtectedDns = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase)
+    if ($adminSdHolderObject) {
+        foreach ($account in $privilegedAccounts) {
+            $key = ([string]$account.dn).ToLowerInvariant()
+            if ($objectByDn.ContainsKey($key) -and
+                (Test-ADSOpenAdminSdHolderProtection -Object $objectByDn[$key] `
+                    -AdminSdHolder $adminSdHolderObject)) {
+                [void]$adminSdHolderProtectedDns.Add([string]$account.dn)
+            }
+        }
+    }
     # Les groupes opératifs intégrés sont volontairement inutilisés lorsqu'ils
     # sont vides. Leur ACE native ne constitue alors pas un chemin exploitable.
     # Dès qu'un membre direct ou imbriqué existe, leurs relations sont conservées.
@@ -452,7 +466,12 @@ function Get-ADSOpenControls {
     . (Join-Path $PSScriptRoot 'Controls\vuln_permissions_naming_context.ps1') -Mode Evaluate
     . (Join-Path $PSScriptRoot 'Controls\vuln_permissions_schema.ps1') -Mode Evaluate
     . (Join-Path $PSScriptRoot 'Controls\vuln_permissions_msdns.ps1') -Mode Evaluate
-    $privilegedAccountDns = @($privilegedAccounts | ForEach-Object dn)
+    # Selon l'acceptation du risque ANSSI, les comptes effectivement protégés
+    # « à la adminSDHolder » sortent de ce contrôle. adminCount=1 ne suffit pas :
+    # la DACL protégée est comparée à celle d'AdminSDHolder par le moteur ACL.
+    $privilegedAccountDns = @($privilegedAccounts | Where-Object {
+        -not $adminSdHolderProtectedDns.Contains($_.dn)
+    } | ForEach-Object dn)
     . (Join-Path $PSScriptRoot 'Controls\vuln_privileged_members_perm.ps1') -Mode Evaluate
     $dnsAdmins = @($groups | Where-Object sAMAccountName -eq 'DnsAdmins')
     $dnsAdminFindings = @(
