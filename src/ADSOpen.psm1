@@ -68,6 +68,19 @@ function Test-UacFlag {
     return [int64]::TryParse([string]$Object.userAccountControl_int, [ref]$value) -and (($value -band $Flag) -ne 0)
 }
 
+function Test-ForestTrustSidHistoryEnabled {
+    param([Parameter(Mandatory)]$Trust)
+
+    $attributes = 0L
+    $direction = 0L
+    if (-not [int64]::TryParse([string]$Trust.trustAttributes_int, [ref]$attributes)) { return $false }
+    if (-not [int64]::TryParse([string]$Trust.trustDirection_int, [ref]$direction)) { return $false }
+
+    return (($direction -band 0x2) -ne 0) -and `
+        (($attributes -band 0x8) -ne 0) -and `
+        (($attributes -band 0x40) -ne 0)
+}
+
 function Convert-OradadDate {
     param([string]$Value)
     $date = [datetime]::MinValue
@@ -534,10 +547,9 @@ function Get-ADSOpenControls {
     . (Join-Path $PSScriptRoot 'Controls\vuln_reversible_password_priv_namingcontext.ps1') -Mode Evaluate
 
     $forestSidHistory = @($trusts | Where-Object {
-        $a=Get-Integer $_.trustAttributes_int; $d=Get-Integer $_.trustDirection_int
-        (($d -band 2) -ne 0) -and (($a -band 8) -ne 0) -and
-        ((($a -band 4) -eq 0) -or (($a -band 64) -ne 0))
-    } | Select-Object dn,trustPartner,trustDirection,trustAttributes)
+        Test-ForestTrustSidHistoryEnabled $_
+    } | Select-Object dn,trustPartner,trustDirection,trustAttributes,
+        @{Name='EnableSIDHistory';Expression={'Yes'}})
     . (Join-Path $PSScriptRoot 'Controls\vuln_trusts_forest_sidhistory.ps1') -Mode Evaluate
     $tgtDeleg = @($trusts | Where-Object {
         $a=Get-Integer $_.trustAttributes_int; $d=Get-Integer $_.trustDirection_int
