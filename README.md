@@ -16,8 +16,8 @@ niveau global de 1 à 5 et génère un rapport HTML et JSON.
 
 En amont, réaliser un export des données annuaire avec ORADAD. dans le fichier xml de l'ORADAD il faut mettre les valeur suivantes:
 
-   <outputFiles>1</outputFiles>                        <!-- Enable output cleartext files -->
-   <outputMLA>0</outputMLA>                            <!-- Enable output encrypted MLA archive -->
+   \<outputFiles\>1\</outputFiles\>                        <!-- Enable output cleartext files -->
+   \<outputMLA\>0\</outputMLA\>                            <!-- Enable output encrypted MLA archive -->
 
 Ici, on exporte les données dans .\oradad-out
 
