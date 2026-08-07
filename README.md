@@ -16,7 +16,7 @@ niveau global de 1 à 5 et génère un rapport HTML et JSON.
 
 ```powershell
 .\ADS-Open.ps1 `
-  -InputPath .\Vertou-out `
+  -InputPath .\oradad-out `
   -OutputPath .\output `
   -Format Both
 ```
@@ -50,3 +50,16 @@ de construction de chemins transitifs, décrit dans
 [`docs/ACL-Engine.md`](docs/ACL-Engine.md).
 
 Référentiel public : [Points de contrôle Active Directory de l'ANSSI](https://www.cert.ssi.gouv.fr/uploads/guide-ad.html).
+
+## Données sensibles
+
+Les exports ORADAD et les rapports générés contiennent des informations
+sensibles sur l'annuaire audité. Ils ne doivent jamais être publiés. Les
+répertoires usuels d'exports et de rapports sont exclus par `.gitignore`.
+
+## Licence
+
+Copyright © 2026 Pierre Faurant.
+
+ADS-Open est distribué sous licence
+[GNU General Public License version 3](LICENSE) (`GPL-3.0-only`).
