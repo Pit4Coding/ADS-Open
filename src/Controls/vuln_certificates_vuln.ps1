@@ -39,6 +39,12 @@ foreach($holder in @($certificationAuthorities+$enrollmentServices+$users+$compu
             $bytes=New-Object byte[] ($raw.Length/2)
             for($i=0;$i -lt $bytes.Length;$i++){$bytes[$i]=[Convert]::ToByte($raw.Substring($i*2,2),16)}
             $cert=New-Object Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$bytes)
+            # L'ANSSI demande de purger les certificats expirés des conteneurs
+            # de confiance. Hors de ces conteneurs, un certificat expiré n'est
+            # plus comptabilisé dans l'analyse cryptographique.
+            if (-not (Test-ADSOpenCertificateInScope -Certificate $cert -HolderDn ([string]$holder.dn))) {
+                continue
+            }
             $sig=[string]$cert.SignatureAlgorithm.FriendlyName
             $signatureOid=[string]$cert.SignatureAlgorithm.Value
             $publicKeyOid=[string]$cert.PublicKey.Oid.Value

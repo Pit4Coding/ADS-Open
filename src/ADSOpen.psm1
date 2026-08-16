@@ -81,6 +81,25 @@ function Test-ForestTrustSidHistoryEnabled {
         (($attributes -band 0x40) -ne 0)
 }
 
+function Test-ADSOpenTrustedCertificateContainer {
+    param([string]$DistinguishedName)
+
+    if ([string]::IsNullOrWhiteSpace($DistinguishedName)) { return $false }
+    return $DistinguishedName -match '(?i)^CN=NTAuthCertificates,CN=Public Key Services,' -or
+        $DistinguishedName -match '(?i),CN=(Certification Authorities|AIA),CN=Public Key Services,'
+}
+
+function Test-ADSOpenCertificateInScope {
+    param(
+        [Parameter(Mandatory)]$Certificate,
+        [string]$HolderDn,
+        [datetime]$ReferenceTime = (Get-Date)
+    )
+
+    if ($Certificate.NotAfter.ToUniversalTime() -ge $ReferenceTime.ToUniversalTime()) { return $true }
+    return Test-ADSOpenTrustedCertificateContainer $HolderDn
+}
+
 function Convert-OradadDate {
     param([string]$Value)
     $date = [datetime]::MinValue
