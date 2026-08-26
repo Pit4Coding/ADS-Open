@@ -125,6 +125,50 @@ function Get-PrincipalRid {
     return ''
 }
 
+function Get-ADSOpenPrivilegedServiceMemberships {
+    param([object[]]$Groups,[object[]]$Users,[object[]]$Smsa,[object[]]$Gmsa)
+
+    $groupByDn = @{}
+    foreach ($group in @($Groups)) { if ($group.dn) { $groupByDn[[string]$group.dn] = $group } }
+    $serviceByDn = @{}
+    foreach ($account in @($Users | Where-Object { $_.servicePrincipalName -and -not (Test-UacFlag $_ 2) })) {
+        if ($account.dn) { $serviceByDn[[string]$account.dn] = [pscustomobject]@{ Account=$account; Type='Compte utilisateur de service (SPN)' } }
+    }
+    foreach ($account in @($Smsa)) {
+        if ($account.dn) { $serviceByDn[[string]$account.dn] = [pscustomobject]@{ Account=$account; Type='sMSA' } }
+    }
+    foreach ($account in @($Gmsa)) {
+        if ($account.dn) { $serviceByDn[[string]$account.dn] = [pscustomobject]@{ Account=$account; Type='gMSA' } }
+    }
+
+    $findings = [System.Collections.Generic.List[object]]::new()
+    $findingKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($rootGroup in @($Groups | Where-Object { (Get-PrincipalRid $_) -in @('512','544') })) {
+        $pending = [System.Collections.Generic.Queue[object]]::new()
+        $pending.Enqueue([pscustomobject]@{ Dn=[string]$rootGroup.dn; Depth=0 })
+        $visited = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        while ($pending.Count -gt 0) {
+            $current = $pending.Dequeue()
+            if (-not $visited.Add($current.Dn)) { continue }
+            $currentGroup = $groupByDn[$current.Dn]
+            if (-not $currentGroup) { continue }
+            foreach ($memberDn in @([string]$currentGroup.member -split ';' | Where-Object { $_ })) {
+                if ($groupByDn.ContainsKey($memberDn)) {
+                    $pending.Enqueue([pscustomobject]@{ Dn=$memberDn; Depth=$current.Depth + 1 })
+                } elseif ($serviceByDn.ContainsKey($memberDn)) {
+                    if (-not $findingKeys.Add(('{0}|{1}' -f $rootGroup.dn,$memberDn))) { continue }
+                    $service = $serviceByDn[$memberDn]
+                    $findings.Add([pscustomobject]@{
+                        Level=1; dn=$memberDn; sAMAccountName=[string]$service.Account.sAMAccountName
+                        AccountType=$service.Type; PrivilegedGroupDn=[string]$rootGroup.dn
+                        Membership=$(if ($current.Depth -eq 0) { 'Direct' } else { 'Indirect' })
+                    })
+                }
+            }
+        }
+    }
+    return @($findings)
+}
 function New-ControlResult {
     param(
         [string]$Id,
@@ -217,6 +261,7 @@ function Get-ADSOpenControls {
         $_.primaryGroupID -notin @('516','521')
     })
     $privilegedAccountsForCount = @($privilegedAccounts | Where-Object objectSid -notmatch '-500$')
+    $privilegedServiceMemberships = @(Get-ADSOpenPrivilegedServiceMemberships -Groups $groups -Users $users -Smsa $smsa -Gmsa $gmsa)
 
     . (Join-Path $PSScriptRoot 'Controls\vuln_guest.ps1') -Mode Evaluate
 
