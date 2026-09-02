@@ -54,6 +54,12 @@ internes non publiées du service ADS.
 - 37 avertissements (`warning_*`), présentés sans effet sur la note ;
 - 13 informations (`info_*`), également sans effet sur la note.
 
+Depuis la version 1.3.0, chacune des 76 vulnérabilités comporte une section
+dépliable **Description détaillée** reprenant sa portée ainsi que les
+recommandations, annotations, limites et acceptations publiées par l'ANSSI.
+La date de vérification du référentiel et un lien vers la fiche officielle sont
+également affichés.
+
 Pour chaque avertissement ou information, le rapport indique l'identifiant, le
 titre, les niveaux indicatifs publiés et la date d'introduction lorsqu'elle
 figure dans le changelog ANSSI. L'absence de date est explicitement signalée.

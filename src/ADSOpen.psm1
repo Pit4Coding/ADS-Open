@@ -1,8 +1,16 @@
 ﻿Set-StrictMode -Version 2.0
 
-$script:ADSOpenVersion = '1.2.0'
+$script:ADSOpenVersion = '1.3.0'
 
 . (Join-Path $PSScriptRoot 'ControlLoader.ps1')
+
+$script:AnssiControlGuidance = @{}
+$guidancePath = Join-Path (Split-Path $PSScriptRoot -Parent) 'data\anssi-control-guidance.json'
+if (Test-Path -LiteralPath $guidancePath) {
+    foreach ($guidance in @(Get-Content -Raw -LiteralPath $guidancePath | ConvertFrom-Json)) {
+        $script:AnssiControlGuidance[[string]$guidance.Id] = $guidance
+    }
+}
 
 function Resolve-OradadRoot {
     param([Parameter(Mandatory)][string]$Path)
@@ -186,6 +194,7 @@ function New-ControlResult {
     if ($null -eq $FailedLevels) {
         $FailedLevels = if ($Status -eq 'Failed') { $Levels } else { @() }
     }
+    $guidance = $script:AnssiControlGuidance[$Id]
     [pscustomobject]@{
         Id             = $Id
         Type           = 'Vulnerability'
@@ -197,6 +206,9 @@ function New-ControlResult {
         FindingCount   = ($Findings | Measure-Object).Count
         Findings       = @($Findings)
         Recommendation = $Recommendation
+        DetailedDescription = if ($guidance) { [string]$guidance.Description } else { '' }
+        OfficialRecommendation = if ($guidance) { [string]$guidance.Recommendation } else { '' }
+        GuidanceReviewedOn = if ($guidance) { [string]$guidance.ReviewedOn } else { '' }
         DataSource     = $DataSource
         Implementation = $Implementation
         Reference      = "https://www.cert.ssi.gouv.fr/uploads/ad_checklist.html#$Id"
@@ -229,6 +241,8 @@ function Get-ADSOpenAnalysis {
     $certificationAuthorities = @(Get-OradadRows $Dataset 'configuration\certificationauthority.tsv')
     $crossRefs = @(Get-OradadRows $Dataset 'configuration\crossRef.tsv')
     $ntdsServices = @(Get-OradadRows $Dataset 'configuration\nTDSService.tsv')
+    $servers = @(Get-OradadRows $Dataset 'configuration\server.tsv')
+    $ntdsDsas = @(Get-OradadRows $Dataset 'configuration\nTDSDSA.tsv')
     $displaySpecifiers = @(Get-OradadRows $Dataset 'configuration\displaySpecifier.tsv')
     $authPolicySilos = @(Get-OradadRows $Dataset 'configuration\authNPolicySilo.tsv')
     $passwordSettings = @(Get-OradadRows $Dataset "$prefix\passwordSettings.tsv")
@@ -779,6 +793,16 @@ function New-ADSOpenHtml {
 <article class="control $($control.Status.ToLowerInvariant())">
   <header><code><a href="$(ConvertTo-HtmlEncoded $control.Reference)" target="_blank" rel="noopener">$(ConvertTo-HtmlEncoded $control.Id)</a></code><span class="item-kind kind-vulnerability">Vulnérabilité</span>$statusMarkup</header>
   <h3>$(ConvertTo-HtmlEncoded $control.Title)</h3>
+  <details class="control-guidance">
+    <summary>Description détaillée</summary>
+    <div class="guidance-content">
+      <h4>Description et portée ANSSI</h4>
+      <p>$(ConvertTo-HtmlEncoded $control.DetailedDescription)</p>
+      <h4>Recommandations, annotations, limites et acceptations</h4>
+      <p>$(ConvertTo-HtmlEncoded $control.OfficialRecommendation)</p>
+      <p class="guidance-source">Référentiel vérifié le $(ConvertTo-HtmlEncoded $control.GuidanceReviewedOn) · <a href="$(ConvertTo-HtmlEncoded $control.Reference)" target="_blank" rel="noopener">ouvrir la fiche ANSSI</a></p>
+    </div>
+  </details>
   <p class="levels"><b>Niveau(x) :</b> $($levelBadges -join '')$(if ($control.Status -eq 'Failed') {" · <b>Seuil(s) en échec :</b> $(@($control.FailedLevels) -join ', ')"}) · <b>Source :</b> $(ConvertTo-HtmlEncoded $control.DataSource)</p>
   $details
   <p class="recommendation">$(ConvertTo-HtmlEncoded $control.Recommendation)</p>
@@ -882,6 +906,7 @@ main{max-width:1180px;margin:auto;padding:28px}.summary{display:flex;gap:16px;fl
 .failed-level{outline:3px solid #172033;outline-offset:2px}
 .legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:18px 0}.legend span.label{margin-right:8px}
 .recommendation{background:#eef3f8;padding:10px;border-radius:6px}li{margin:6px 0;overflow-wrap:anywhere}
+.control-guidance{margin:12px 0;border:1px solid #d7dde6;border-radius:8px;background:#f8fafc}.control-guidance>summary{cursor:pointer;padding:10px 12px;font-weight:700}.guidance-content{padding:0 12px 12px}.guidance-content h4{margin:12px 0 5px}.guidance-content p{white-space:pre-line;overflow-wrap:anywhere;margin:5px 0}.guidance-source{font-size:.82rem;color:#667085}
 .notice{background:#fff3cd;color:#5f4600;padding:12px;border-radius:8px;margin-top:18px}
 .level-nav{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0}.level-nav a{display:flex;align-items:center;gap:5px;background:#fff;color:#172033;text-decoration:none;padding:8px 12px;border-radius:8px;box-shadow:0 2px 8px #0001}
 .level-section{margin-top:34px;scroll-margin-top:12px}.level-heading{display:flex;justify-content:space-between;align-items:end;gap:18px;border-bottom:2px solid #dce1e8;margin-bottom:16px;padding-bottom:10px}
