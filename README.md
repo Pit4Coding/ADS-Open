@@ -58,7 +58,9 @@ Depuis la version 1.3.0, chacune des 76 vulnérabilités comporte une section
 dépliable **Description détaillée** reprenant sa portée ainsi que les
 recommandations, annotations, limites et acceptations publiées par l'ANSSI.
 La date de vérification du référentiel et un lien vers la fiche officielle sont
-également affichés.
+également affichés. À partir de la version 1.3.1, la restitution HTML est entièrement
+autonome : les liens externes sont supprimés et le texte intégral embarqué est
+structuré en paragraphes, sous-titres et encadrés pour une consultation hors ligne.
 
 Pour chaque avertissement ou information, le rapport indique l'identifiant, le
 titre, les niveaux indicatifs publiés et la date d'introduction lorsqu'elle
