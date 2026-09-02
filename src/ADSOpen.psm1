@@ -1,6 +1,6 @@
 ﻿Set-StrictMode -Version 2.0
 
-$script:ADSOpenVersion = '1.1.0'
+$script:ADSOpenVersion = '1.2.0'
 
 . (Join-Path $PSScriptRoot 'ControlLoader.ps1')
 
@@ -203,7 +203,7 @@ function New-ControlResult {
     }
 }
 
-function Get-ADSOpenControls {
+function Get-ADSOpenAnalysis {
     param([Parameter(Mandatory)]$Dataset)
 
     $domain = Split-Path (Split-Path $Dataset.Root -Parent) -Leaf
@@ -712,7 +712,11 @@ function Get-ADSOpenControls {
         throw "Résultats sans définition de contrôle : $($unknownIds -join ', ')"
     }
 
-    return $results
+    $advisories = @(. (Join-Path $PSScriptRoot 'AdvisoryEngine.ps1'))
+    return [pscustomobject]@{
+        Controls   = @($results)
+        Advisories = $advisories
+    }
 }
 
 function Get-ADSOpenScore {
@@ -748,34 +752,6 @@ function ConvertTo-HtmlEncoded {
     return [System.Net.WebUtility]::HtmlEncode([string]$Value)
 }
 
-function Get-ADSOpenAdvisories {
-    $catalogPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'data\anssi-advisories.tsv'
-    if (-not (Test-Path -LiteralPath $catalogPath)) {
-        throw "Catalogue ANSSI complémentaire absent : $catalogPath"
-    }
-    foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
-        $levels = @($item.Levels -split ',' | Where-Object { $_ } | ForEach-Object { [int]$_ })
-        $publishedDisplay = 'Non publiée par l''ANSSI'
-        if ($item.PublishedDate) {
-            $published = [datetime]::MinValue
-            if ([datetime]::TryParseExact($item.PublishedDate,'yyyy-MM-dd',
-                [Globalization.CultureInfo]::InvariantCulture,
-                [Globalization.DateTimeStyles]::None,[ref]$published)) {
-                $publishedDisplay = $published.ToString('dd/MM/yyyy')
-            }
-        }
-        [pscustomobject]@{
-            Id                   = $item.Id
-            Type                 = $item.Type
-            Title                = $item.Title
-            Levels               = $levels
-            PublishedDate        = $item.PublishedDate
-            PublishedDateDisplay = $publishedDisplay
-            AffectsScore         = $false
-            Reference            = "https://www.cert.ssi.gouv.fr/uploads/ad_checklist.html#$($item.Id)"
-        }
-    }
-}
 function New-ADSOpenHtml {
     param($Audit)
     $cardById = @{}
@@ -845,12 +821,29 @@ function New-ADSOpenHtml {
                 "<span class=`"level level$level`" title=`"Niveau ANSSI indicatif $level`">$level</span>"
             }
             $levelMarkup = if (@($badges).Count) { "<p><b>Niveau(x) indicatif(s) :</b> $($badges -join '')</p>" } else { '' }
+            $statusLabel = switch ($item.Status) {
+                'Detected' { 'Détecté' }; 'NotDetected' { 'Non détecté' }
+                'Observed' { 'Observation' }; default { 'Données indisponibles' }
+            }
+            $details = if ($item.FindingCount) {
+                $itemsMarkup = foreach ($finding in @($item.Findings | Select-Object -First 100)) {
+                    $findingText = ($finding.PSObject.Properties | ForEach-Object { "$(ConvertTo-HtmlEncoded $_.Name): $(ConvertTo-HtmlEncoded $_.Value)" }) -join ' · '
+                    "<li>$findingText</li>"
+                }
+                "<details><summary>$($item.FindingCount) élément(s)</summary><ul>$($itemsMarkup -join '')</ul></details>"
+            } else { '' }
+            $recommendationMarkup = if ($item.Recommendation) { "<p class=`"recommendation`"><b>Recommandation :</b> $(ConvertTo-HtmlEncoded $item.Recommendation)</p>" } else { '' }
             @"
-<article class="advisory $kindClass">
-  <header><code><a href="$(ConvertTo-HtmlEncoded $item.Reference)" target="_blank" rel="noopener">$(ConvertTo-HtmlEncoded $item.Id)</a></code><span class="item-kind kind-$kindClass">$kindLabel</span></header>
+<article class="advisory $kindClass $($item.Status.ToLowerInvariant())">
+  <header><code><a href="$(ConvertTo-HtmlEncoded $item.Reference)" target="_blank" rel="noopener">$(ConvertTo-HtmlEncoded $item.Id)</a></code><span class="item-kind kind-$kindClass">$kindLabel</span><span class="advisory-status">$statusLabel</span></header>
   <h3>$(ConvertTo-HtmlEncoded $item.Title)</h3>
   $levelMarkup
   <p><b>Date ANSSI :</b> $(ConvertTo-HtmlEncoded $item.PublishedDateDisplay)</p>
+  <p>$(ConvertTo-HtmlEncoded $item.Explanation)</p>
+  <p class="result-summary"><b>Résultat :</b> $(ConvertTo-HtmlEncoded $item.ResultSummary)</p>
+  $details
+  $recommendationMarkup
+  <p class="data-source"><b>Source :</b> $(ConvertTo-HtmlEncoded $item.DataSource)</p>
 </article>
 "@
         }
@@ -878,7 +871,7 @@ body{margin:0}.hero{position:relative;overflow:hidden;padding:32px max(5vw,24px)
 .environment span{display:block;color:#9db4d2;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em}.environment b{font-size:1rem}
 .score{display:inline-grid;place-items:center;width:92px;height:92px;border-radius:50%;font-size:42px;font-weight:700}
 main{max-width:1180px;margin:auto;padding:28px}.summary{display:flex;gap:16px;flex-wrap:wrap}.summary div,.control{background:#fff;border-radius:10px;box-shadow:0 2px 12px #0001;padding:16px}
-.summary div{min-width:150px}.controls,.advisories{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}.advisory{background:#fff;border-radius:10px;box-shadow:0 2px 12px #0001;padding:16px;border-left:6px solid #6c757d}.advisory.warning{border-color:#e5a000;background:#fffaf0}.advisory.information{border-color:#2683bd;background:#f5faff}.advisory header{display:flex;align-items:center;gap:10px}.advisory h3{margin-bottom:8px}
+.summary div{min-width:150px}.controls,.advisories{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}.advisory{background:#fff;border-radius:10px;box-shadow:0 2px 12px #0001;padding:16px;border-left:6px solid #6c757d}.advisory.warning{border-color:#e5a000;background:#fffaf0}.advisory.warning.detected{background:#fff2d8}.advisory.information{border-color:#2683bd;background:#f5faff}.advisory.dataunavailable{border-color:#7d8590;background:#f6f7f9}.advisory header{display:flex;align-items:center;gap:10px}.advisory h3{margin-bottom:8px}.advisory-status{font-weight:700}.result-summary{padding:9px;border-radius:6px;background:#ffffffa8}.data-source{font-size:.85rem;color:#667085}
 .control{border-left:6px solid #8792a2}.control.failed{border-color:#c62828;background:#fff3f3}.control.passed{border-color:#2e7d32}.control.notevaluated{border-color:#6c757d;background:#f8f9fa}
 .control header{display:flex;justify-content:space-between}.control header span{font-weight:700}.control h3{margin-bottom:8px}
 .status-icon{display:inline-grid;place-items:center;width:1.65em;height:1.65em;border-radius:50%;font-size:1.15rem;font-weight:800;line-height:1}.status-passed{background:#e6f4e8;color:#1b7f32}.status-failed{background:#fde8e8;color:#c62828}.status-unknown{background:#eceff3;color:#5f6872}
@@ -946,11 +939,12 @@ function Invoke-ADSOpenAudit {
     )
     $root = Resolve-OradadRoot $InputPath
     $dataset = New-OradadDataset $root
-    $controls = @(Get-ADSOpenControls $dataset)
+    $analysis = Get-ADSOpenAnalysis $dataset
+    $controls = @($analysis.Controls)
     $metadata = @{}
     foreach ($row in Get-OradadRows $dataset 'metadata.tsv') { $metadata[$row.key] = $row.value }
     $score = Get-ADSOpenScore $controls
-    $advisories = @(Get-ADSOpenAdvisories)
+    $advisories = @($analysis.Advisories)
     $auditDomain = if ($metadata.ContainsKey('domain') -and $metadata['domain']) {
         $metadata['domain']
     } else {

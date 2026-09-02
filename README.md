@@ -47,7 +47,7 @@ internes non publiées du service ADS.
 
 ## Couverture des contrôles
 
-À partir de la version 1.1.0, le rapport distingue trois catégories ANSSI :
+À partir de la version 1.2.0, le rapport distingue trois catégories ANSSI :
 
 - 76 vulnérabilités (`vuln_*`), seules susceptibles de produire un échec et
   d'influencer le niveau global ou les points cumulés ;

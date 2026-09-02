@@ -11,20 +11,22 @@ try {
     if (-not (Test-Path (Join-Path $out 'report.json'))) { throw 'report.json absent' }
     if (-not (Test-Path (Join-Path $out 'report.html'))) { throw 'report.html absent' }
     $report = Get-Content (Join-Path $out 'report.json') -Raw | ConvertFrom-Json
-    if ($report.Version -ne '1.1.0') { throw "Version ADS-Open inattendue: $($report.Version)" }
+    if ($report.Version -ne '1.2.0') { throw "Version ADS-Open inattendue: $($report.Version)" }
     $html = Get-Content (Join-Path $out 'report.html') -Raw
-    if ($html -notmatch 'Version ADS-Open</span><b>v1\.1\.0</b>') {
+    if ($html -notmatch 'Version ADS-Open</span><b>v1\.2\.0</b>') {
         throw 'Version ADS-Open absente de l''en-tête HTML'
     }
     if ($report.Advisories.Count -ne 50) { throw "Catalogue complémentaire ANSSI incomplet: $($report.Advisories.Count)/50" }
     if (@($report.Advisories | Where-Object Type -eq 'Warning').Count -ne 37) { throw 'Nombre d''avertissements ANSSI invalide' }
     if (@($report.Advisories | Where-Object Type -eq 'Information').Count -ne 13) { throw 'Nombre d''informations ANSSI invalide' }
     if (@($report.Advisories | Where-Object { -not $_.PublishedDate }).Count -ne 0) { throw 'Un item complémentaire ne possède pas de date ANSSI publiée' }
+    if (@($report.Advisories | Where-Object { -not $_.Explanation -or -not $_.ResultSummary }).Count -ne 0) { throw 'Un item complémentaire ne possède pas d''explication ou de résultat' }
     if (@($report.Advisories | Where-Object AffectsScore).Count -ne 0) { throw 'Un item complémentaire influence la note' }
     if (@($report.Controls | Where-Object { $_.Type -ne 'Vulnerability' -or -not $_.AffectsScore }).Count -ne 0) { throw 'Classification des vulnérabilités invalide' }
     $datedWarning = $report.Advisories | Where-Object Id -eq 'warning_admincount' | Select-Object -First 1
     if ($datedWarning.PublishedDate -ne '2018-09-27') { throw 'Date ANSSI de warning_admincount invalide' }
-    if ($html -notmatch 'Observations complémentaires ANSSI' -or $html -notmatch 'Avertissements ANSSI' -or $html -notmatch 'Informations ANSSI') { throw 'Sections complémentaires absentes du rapport HTML' }    if ($report.Controls.Count -ne 76) { throw "Catalogue ANSSI incomplet: $($report.Controls.Count)/76" }
+    if ($html -notmatch 'Observations complémentaires ANSSI' -or $html -notmatch 'Avertissements ANSSI' -or $html -notmatch 'Informations ANSSI') { throw 'Sections complémentaires absentes du rapport HTML' }
+    if ($report.Controls.Count -ne 76) { throw "Catalogue ANSSI incomplet: $($report.Controls.Count)/76" }
     if (@($report.Controls.Id | Sort-Object -Unique).Count -ne 76) { throw 'Identifiants ANSSI dupliqués' }
     if (@($report.Controls | Where-Object Status -eq 'NotEvaluated').Count -ne 0) {
         throw 'Des contrôles sont encore non évalués'
