@@ -26,6 +26,7 @@ try {
     $datedWarning = $report.Advisories | Where-Object Id -eq 'warning_admincount' | Select-Object -First 1
     if ($datedWarning.PublishedDate -ne '2018-09-27') { throw 'Date ANSSI de warning_admincount invalide' }
     if ($html -notmatch 'Observations complémentaires ANSSI' -or $html -notmatch 'Avertissements ANSSI' -or $html -notmatch 'Informations ANSSI') { throw 'Sections complémentaires absentes du rapport HTML' }
+    if ($html -notmatch 'overflow-wrap:anywhere' -or $html -notmatch 'minmax\(min\(100%,340px\),1fr\)') { throw 'Protection responsive des cartes absente' }
     if ($report.Controls.Count -ne 76) { throw "Catalogue ANSSI incomplet: $($report.Controls.Count)/76" }
     if (@($report.Controls.Id | Sort-Object -Unique).Count -ne 76) { throw 'Identifiants ANSSI dupliqués' }
     if (@($report.Controls | Where-Object Status -eq 'NotEvaluated').Count -ne 0) {
