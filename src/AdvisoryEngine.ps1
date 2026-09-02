@@ -10,6 +10,24 @@ $metadataRows = @(Get-OradadRows $Dataset 'metadata.tsv')
 $controlById = @{}
 foreach ($control in $results) { $controlById[$control.Id] = $control }
 
+function Test-ADSOpenWellKnownSid {
+    param([AllowNull()][string]$Sid)
+    if ([string]::IsNullOrWhiteSpace($Sid)) { return $false }
+    try {
+        $identifier = New-Object System.Security.Principal.SecurityIdentifier($Sid)
+        foreach ($kind in [Enum]::GetValues([System.Security.Principal.WellKnownSidType])) {
+            try {
+                if ($identifier.IsWellKnown($kind)) { return $true }
+            } catch { }
+        }
+    } catch {
+        return $false
+    }
+    # Familles générées dynamiquement mais réservées par Windows : SID de
+    # session, package d'authentification, service, machine virtuelle, etc.
+    return $Sid -match '^S-1-(?:0|1|2|3|4|9|11|15|16|18)(?:-|$)' -or
+        $Sid -match '^S-1-5-(?:5-|32-|64-|80-|82-|83-|84-|90-|96-)'
+}
 function New-AdvisoryResult {
     param($Item,[object[]]$Findings,[string]$Explanation,[string]$Recommendation,
         [string]$Source,[string]$Availability = 'Evaluated')
@@ -187,7 +205,7 @@ foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
             $source='nTSecurityDescriptor';$explanation='Recherche les permissions sensibles de gestion de la réplication.'
         }
         'warning_sd_unknown_sid' {
-            $findings=@($acl.Relations|Where-Object{$_.SourceSid-and-not $_.SourceDn}|Select-Object SourceSid,TargetDn,Right,Inherited)
+            $findings=@($acl.Relations|Where-Object{$_.SourceSid -and -not $_.SourceDn -and -not (Test-ADSOpenWellKnownSid ([string]$_.SourceSid))}|Select-Object SourceSid,TargetDn,Right,Inherited)
             $source='nTSecurityDescriptor';$explanation='Inventorie les ACE dont le SID source ne peut pas être résolu.'
         }
         'warning_spn_priv' {
