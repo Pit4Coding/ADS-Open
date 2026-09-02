@@ -1,5 +1,7 @@
 ﻿Set-StrictMode -Version 2.0
 
+$script:ADSOpenVersion = '1.1.0'
+
 . (Join-Path $PSScriptRoot 'ControlLoader.ps1')
 
 function Resolve-OradadRoot {
@@ -186,6 +188,8 @@ function New-ControlResult {
     }
     [pscustomobject]@{
         Id             = $Id
+        Type           = 'Vulnerability'
+        AffectsScore   = $true
         Levels         = $Levels
         FailedLevels   = @($FailedLevels)
         Title          = $Title
@@ -744,6 +748,34 @@ function ConvertTo-HtmlEncoded {
     return [System.Net.WebUtility]::HtmlEncode([string]$Value)
 }
 
+function Get-ADSOpenAdvisories {
+    $catalogPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'data\anssi-advisories.tsv'
+    if (-not (Test-Path -LiteralPath $catalogPath)) {
+        throw "Catalogue ANSSI complémentaire absent : $catalogPath"
+    }
+    foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
+        $levels = @($item.Levels -split ',' | Where-Object { $_ } | ForEach-Object { [int]$_ })
+        $publishedDisplay = 'Non publiée par l''ANSSI'
+        if ($item.PublishedDate) {
+            $published = [datetime]::MinValue
+            if ([datetime]::TryParseExact($item.PublishedDate,'yyyy-MM-dd',
+                [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::None,[ref]$published)) {
+                $publishedDisplay = $published.ToString('dd/MM/yyyy')
+            }
+        }
+        [pscustomobject]@{
+            Id                   = $item.Id
+            Type                 = $item.Type
+            Title                = $item.Title
+            Levels               = $levels
+            PublishedDate        = $item.PublishedDate
+            PublishedDateDisplay = $publishedDisplay
+            AffectsScore         = $false
+            Reference            = "https://www.cert.ssi.gouv.fr/uploads/ad_checklist.html#$($item.Id)"
+        }
+    }
+}
 function New-ADSOpenHtml {
     param($Audit)
     $cardById = @{}
@@ -769,7 +801,7 @@ function New-ADSOpenHtml {
         } else { '' }
         $cardById[$control.Id] = @"
 <article class="control $($control.Status.ToLowerInvariant())">
-  <header><code><a href="$(ConvertTo-HtmlEncoded $control.Reference)" target="_blank" rel="noopener">$(ConvertTo-HtmlEncoded $control.Id)</a></code>$statusMarkup</header>
+  <header><code><a href="$(ConvertTo-HtmlEncoded $control.Reference)" target="_blank" rel="noopener">$(ConvertTo-HtmlEncoded $control.Id)</a></code><span class="item-kind kind-vulnerability">Vulnérabilité</span>$statusMarkup</header>
   <h3>$(ConvertTo-HtmlEncoded $control.Title)</h3>
   <p class="levels"><b>Niveau(x) :</b> $($levelBadges -join '')$(if ($control.Status -eq 'Failed') {" · <b>Seuil(s) en échec :</b> $(@($control.FailedLevels) -join ', ')"}) · <b>Source :</b> $(ConvertTo-HtmlEncoded $control.DataSource)</p>
   $details
@@ -803,6 +835,32 @@ function New-ADSOpenHtml {
 </section>
 "@
     }
+    $advisorySections = foreach ($type in @('Warning','Information')) {
+        $items = @($Audit.Advisories | Where-Object Type -eq $type)
+        $label = if ($type -eq 'Warning') { 'Avertissements' } else { 'Informations' }
+        $kindLabel = if ($type -eq 'Warning') { 'Avertissement' } else { 'Information' }
+        $kindClass = $type.ToLowerInvariant()
+        $cards = foreach ($item in $items) {
+            $badges = foreach ($level in $item.Levels) {
+                "<span class=`"level level$level`" title=`"Niveau ANSSI indicatif $level`">$level</span>"
+            }
+            $levelMarkup = if (@($badges).Count) { "<p><b>Niveau(x) indicatif(s) :</b> $($badges -join '')</p>" } else { '' }
+            @"
+<article class="advisory $kindClass">
+  <header><code><a href="$(ConvertTo-HtmlEncoded $item.Reference)" target="_blank" rel="noopener">$(ConvertTo-HtmlEncoded $item.Id)</a></code><span class="item-kind kind-$kindClass">$kindLabel</span></header>
+  <h3>$(ConvertTo-HtmlEncoded $item.Title)</h3>
+  $levelMarkup
+  <p><b>Date ANSSI :</b> $(ConvertTo-HtmlEncoded $item.PublishedDateDisplay)</p>
+</article>
+"@
+        }
+        @"
+<section class="advisory-section" id="$($type.ToLowerInvariant())s">
+  <header class="level-heading"><div><h2>$label ANSSI</h2></div><p><b>$($items.Count) item(s)</b> · sans effet sur la note</p></header>
+  <div class="advisories">$($cards -join "`n")</div>
+</section>
+"@
+    }
     @"
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -820,11 +878,11 @@ body{margin:0}.hero{position:relative;overflow:hidden;padding:32px max(5vw,24px)
 .environment span{display:block;color:#9db4d2;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em}.environment b{font-size:1rem}
 .score{display:inline-grid;place-items:center;width:92px;height:92px;border-radius:50%;font-size:42px;font-weight:700}
 main{max-width:1180px;margin:auto;padding:28px}.summary{display:flex;gap:16px;flex-wrap:wrap}.summary div,.control{background:#fff;border-radius:10px;box-shadow:0 2px 12px #0001;padding:16px}
-.summary div{min-width:150px}.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}
+.summary div{min-width:150px}.controls,.advisories{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}.advisory{background:#fff;border-radius:10px;box-shadow:0 2px 12px #0001;padding:16px;border-left:6px solid #6c757d}.advisory.warning{border-color:#e5a000;background:#fffaf0}.advisory.information{border-color:#2683bd;background:#f5faff}.advisory header{display:flex;align-items:center;gap:10px}.advisory h3{margin-bottom:8px}
 .control{border-left:6px solid #8792a2}.control.failed{border-color:#c62828;background:#fff3f3}.control.passed{border-color:#2e7d32}.control.notevaluated{border-color:#6c757d;background:#f8f9fa}
 .control header{display:flex;justify-content:space-between}.control header span{font-weight:700}.control h3{margin-bottom:8px}
 .status-icon{display:inline-grid;place-items:center;width:1.65em;height:1.65em;border-radius:50%;font-size:1.15rem;font-weight:800;line-height:1}.status-passed{background:#e6f4e8;color:#1b7f32}.status-failed{background:#fde8e8;color:#c62828}.status-unknown{background:#eceff3;color:#5f6872}
-.control code a{color:inherit}.control.notevaluated header span{color:#5f6872}
+.control code a,.advisory code a{color:inherit}.control.notevaluated header span{color:#5f6872}.item-kind{margin-left:auto;padding:.28em .65em;border-radius:999px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.kind-vulnerability{background:#fde8e8;color:#a51f1f}.kind-warning{background:#fff0c2;color:#745200}.kind-information{background:#dceeff;color:#135b8a}
 .level{display:inline-grid;place-items:center;min-width:1.65em;height:1.65em;margin:0 .18em;border-radius:50%;font-weight:700}
 .level1{background:#dc3545;color:#fff}.level2{background:#ffa500;color:#000}.level3{background:#f0e68c;color:#000}
 .level4{background:#007bff;color:#fff}.level5{background:#28a745;color:#fff}
@@ -863,15 +921,18 @@ main{max-width:1180px;margin:auto;padding:28px}.summary{display:flex;gap:16px;fl
   <div><span>Sites Active Directory</span><b>$(ConvertTo-HtmlEncoded $Audit.SiteCount)</b></div>
   <div><span>Utilisateurs</span><b>$(ConvertTo-HtmlEncoded $Audit.UserCount)</b></div>
   <div><span>Ordinateurs</span><b>$(ConvertTo-HtmlEncoded $Audit.ComputerCount)</b></div>
+  <div><span>Version ADS-Open</span><b>v$(ConvertTo-HtmlEncoded $Audit.Version)</b></div>
   <div title="$(ConvertTo-HtmlEncoded $Audit.Score.SuccessPointsMethod)"><span>Points cumulés validés</span><b>$(ConvertTo-HtmlEncoded $Audit.Score.SuccessPoints) pts</b></div>
   <div><span>Généré le</span><b>$(ConvertTo-HtmlEncoded $Audit.GeneratedDisplay)</b></div>
 </div></section>
 <main><p class="notice">Réimplémentation indépendante fondée sur les données ORADAD et les contrôles publics de l'ANSSI. Ce rapport n'est ni produit ni certifié par l'ANSSI. Le score en points est une estimation ADS-Open : le barème officiel ADS n'est pas public.</p>
 <section class="legend"><b>Échelle ANSSI :</b><span class="level level1">1</span><span class="label">Critique</span><span class="level level2">2</span><span class="level level3">3</span><span class="level level4">4</span><span class="level level5">5</span><span class="label">Maîtrisé</span></section>
-<section class="summary"><div><b>$($Audit.Score.Failed)</b><br>Échecs</div><div><b>$($Audit.Score.Passed)</b><br>Validés</div><div><b>$($Audit.Score.NotEvaluated)</b><br>Non évalués</div><div><b>$($Audit.Controls.Count)</b><br>Catalogue ANSSI</div></section>
+<section class="summary"><div><b>$($Audit.Score.Failed)</b><br>Échecs</div><div><b>$($Audit.Score.Passed)</b><br>Validés</div><div><b>$($Audit.Score.NotEvaluated)</b><br>Non évalués</div><div><b>$($Audit.Controls.Count)</b><br>Vulnérabilités</div><div><b>$(@($Audit.Advisories | Where-Object Type -eq 'Warning').Count)</b><br>Avertissements</div><div><b>$(@($Audit.Advisories | Where-Object Type -eq 'Information').Count)</b><br>Informations</div></section>
 <nav class="level-nav" aria-label="Accès aux niveaux ANSSI"><a href="#niveau-1"><span class="level level1">1</span>Niveau 1</a><a href="#niveau-2"><span class="level level2">2</span>Niveau 2</a><a href="#niveau-3"><span class="level level3">3</span>Niveau 3</a><a href="#niveau-4"><span class="level level4">4</span>Niveau 4</a><a href="#niveau-5"><span class="level level5">5</span>Niveau 5</a></nav>
 $($sections -join "`n")
-<footer class="footer">ADS-Open · Pré-audit ANSSI indépendant · © $(Get-Date -Format yyyy) Pierre Faurant</footer>
+<section class="advisory-intro"><h2>Observations complémentaires ANSSI</h2><p>Ces avertissements et informations sont présentés à titre contextuel. Ils ne produisent aucun échec et ne modifient ni le niveau ni les points cumulés.</p></section>
+$($advisorySections -join "`n")
+<footer class="footer">ADS-Open v$(ConvertTo-HtmlEncoded $Audit.Version) · Pré-audit ANSSI indépendant · © $(Get-Date -Format yyyy) Pierre Faurant</footer>
 </main></body></html>
 "@
 }
@@ -889,6 +950,7 @@ function Invoke-ADSOpenAudit {
     $metadata = @{}
     foreach ($row in Get-OradadRows $dataset 'metadata.tsv') { $metadata[$row.key] = $row.value }
     $score = Get-ADSOpenScore $controls
+    $advisories = @(Get-ADSOpenAdvisories)
     $auditDomain = if ($metadata.ContainsKey('domain') -and $metadata['domain']) {
         $metadata['domain']
     } else {
@@ -915,7 +977,7 @@ function Invoke-ADSOpenAudit {
     $forestFunctionalLevel = Format-FunctionalLevel (Get-OradadValue $forestRoot 'msDS-Behavior-Version')
     $audit = [pscustomobject]@{
         Product       = 'ADS-Open'
-        Version       = '0.1.0'
+        Version       = $script:ADSOpenVersion
         GeneratedAt   = (Get-Date).ToString('o')
         InputRoot     = $root
         Domain        = $auditDomain
@@ -931,6 +993,7 @@ function Invoke-ADSOpenAudit {
         OradadVersion = $metadata.oradad_version
         Score         = $score
         Controls      = $controls
+        Advisories    = $advisories
         Disclaimer    = "Réimplémentation indépendante; ce résultat n'est pas un rapport ADS officiel de l'ANSSI."
     }
     New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null

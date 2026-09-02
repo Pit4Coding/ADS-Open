@@ -47,8 +47,18 @@ internes non publiées du service ADS.
 
 ## Couverture des contrôles
 
-Le catalogue embarque les 76 points de contrôle publiés par l'ANSSI. Chaque
-contrôle reçoit obligatoirement l'un des états `Passed`, `Failed` ou
+À partir de la version 1.1.0, le rapport distingue trois catégories ANSSI :
+
+- 76 vulnérabilités (`vuln_*`), seules susceptibles de produire un échec et
+  d'influencer le niveau global ou les points cumulés ;
+- 37 avertissements (`warning_*`), présentés sans effet sur la note ;
+- 13 informations (`info_*`), également sans effet sur la note.
+
+Pour chaque avertissement ou information, le rapport indique l'identifiant, le
+titre, les niveaux indicatifs publiés et la date d'introduction lorsqu'elle
+figure dans le changelog ANSSI. L'absence de date est explicitement signalée.
+
+Chaque vulnérabilité reçoit obligatoirement l'un des états `Passed`, `Failed` ou
 `NotEvaluated`. Un contrôle non implémenté ou non concluant faute de données
 n'est jamais considéré comme validé et n'influence pas artificiellement le score.
 
