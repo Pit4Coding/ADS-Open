@@ -11,9 +11,9 @@ try {
     if (-not (Test-Path (Join-Path $out 'report.json'))) { throw 'report.json absent' }
     if (-not (Test-Path (Join-Path $out 'report.html'))) { throw 'report.html absent' }
     $report = Get-Content (Join-Path $out 'report.json') -Raw | ConvertFrom-Json
-    if ($report.Version -ne '1.3.1') { throw "Version ADS-Open inattendue: $($report.Version)" }
+    if ($report.Version -ne '1.3.2') { throw "Version ADS-Open inattendue: $($report.Version)" }
     $html = Get-Content (Join-Path $out 'report.html') -Raw
-    if ($html -notmatch 'Version ADS-Open</span><b>v1\.3\.1</b>') {
+    if ($html -notmatch 'Version ADS-Open</span><b>v1\.3\.2</b>') {
         throw 'Version ADS-Open absente de l''en-tête HTML'
     }
     if ($report.Advisories.Count -ne 50) { throw "Catalogue complémentaire ANSSI incomplet: $($report.Advisories.Count)/50" }

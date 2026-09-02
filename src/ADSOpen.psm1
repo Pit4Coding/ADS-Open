@@ -1,15 +1,21 @@
 ﻿Set-StrictMode -Version 2.0
 
-$script:ADSOpenVersion = '1.3.1'
+$script:ADSOpenVersion = '1.3.2'
 
 . (Join-Path $PSScriptRoot 'ControlLoader.ps1')
 
 $script:AnssiControlGuidance = @{}
 $guidancePath = Join-Path (Split-Path $PSScriptRoot -Parent) 'data\anssi-control-guidance.json'
-if (Test-Path -LiteralPath $guidancePath) {
-    foreach ($guidance in @(Get-Content -Raw -LiteralPath $guidancePath | ConvertFrom-Json)) {
+if (-not (Test-Path -LiteralPath $guidancePath)) {
+    throw "Catalogue ANSSI hors ligne introuvable : $guidancePath. Le rapport ne peut pas être généré sans ses fiches détaillées."
+}
+foreach ($guidance in @(Get-Content -Raw -LiteralPath $guidancePath | ConvertFrom-Json)) {
+    if ($guidance.Id -and $guidance.Description -and $guidance.Recommendation -and $guidance.ReviewedOn) {
         $script:AnssiControlGuidance[[string]$guidance.Id] = $guidance
     }
+}
+if ($script:AnssiControlGuidance.Count -ne 76) {
+    throw "Catalogue ANSSI hors ligne incomplet : $($script:AnssiControlGuidance.Count)/76 fiches complètes. Rapport interrompu pour éviter des descriptions vides."
 }
 
 function Resolve-OradadRoot {
