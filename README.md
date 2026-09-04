@@ -92,3 +92,6 @@ Copyright © 2026 Pierre Faurant.
 
 ADS-Open est distribué sous licence
 [GNU General Public License version 3](LICENSE) (`GPL-3.0-only`).
+
+
+Depuis la version 1.4.0, les 50 observations complémentaires ANSSI sont évaluées localement lorsque l'extract ORADAD complet contient le journal, les métadonnées, les PSO, les ACL, le schéma et SYSVOL.

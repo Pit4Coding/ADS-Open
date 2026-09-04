@@ -11,9 +11,9 @@ try {
     if (-not (Test-Path (Join-Path $out 'report.json'))) { throw 'report.json absent' }
     if (-not (Test-Path (Join-Path $out 'report.html'))) { throw 'report.html absent' }
     $report = Get-Content (Join-Path $out 'report.json') -Raw | ConvertFrom-Json
-    if ($report.Version -ne '1.3.3') { throw "Version ADS-Open inattendue: $($report.Version)" }
+    if ($report.Version -ne '1.4.0') { throw "Version ADS-Open inattendue: $($report.Version)" }
     $html = Get-Content (Join-Path $out 'report.html') -Raw
-    if ($html -notmatch 'Version ADS-Open</span><b>v1\.3\.3</b>') {
+    if ($html -notmatch 'Version ADS-Open</span><b>v1\.4\.0</b>') {
         throw 'Version ADS-Open absente de l''en-tête HTML'
     }
     if ($report.Advisories.Count -ne 50) { throw "Catalogue complémentaire ANSSI incomplet: $($report.Advisories.Count)/50" }
@@ -22,6 +22,7 @@ try {
     if (@($report.Advisories | Where-Object { -not $_.PublishedDate }).Count -ne 0) { throw 'Un item complémentaire ne possède pas de date ANSSI publiée' }
     if (@($report.Advisories | Where-Object { -not $_.Explanation -or -not $_.ResultSummary }).Count -ne 0) { throw 'Un item complémentaire ne possède pas d''explication ou de résultat' }
     if (@($report.Advisories | Where-Object AffectsScore).Count -ne 0) { throw 'Un item complémentaire influence la note' }
+    if (@($report.Advisories | Where-Object Status -eq 'DataUnavailable').Count -ne 0) { throw 'Des observations complémentaires restent non évaluées malgré un extract ORADAD complet' }
     $unknownSidWarning = $report.Advisories | Where-Object Id -eq 'warning_sd_unknown_sid' | Select-Object -First 1
     if (@($unknownSidWarning.Findings | Where-Object SourceSid -eq 'S-1-1-0').Count -ne 0) {
         throw 'Everyone (S-1-1-0) est incorrectement classé comme SID inconnu'

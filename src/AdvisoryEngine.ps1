@@ -72,6 +72,23 @@ $privilegedAccountDns = [System.Collections.Generic.HashSet[string]]::new([Strin
 foreach($account in $privilegedAccounts){if($account.dn){[void]$privilegedAccountDns.Add($account.dn)}}
 $topByDn=@{}
 foreach($object in $allObjects){if($object.dn){$topByDn[[string]$object.dn]=$object}}
+$principalByDn=@{}
+foreach($principal in $allPrincipals){if($principal.dn){$principalByDn[[string]$principal.dn]=$principal}}
+$metadata=@{}
+$metadataPath=Join-Path $Dataset.Root 'metadata.tsv'
+if(Test-Path -LiteralPath $metadataPath){foreach($line in Get-Content -LiteralPath $metadataPath){$parts=$line-split "`t",2;if($parts.Count-eq2){$metadata[$parts[0]]=$parts[1]}}}
+$oradadLogPath=Join-Path $Dataset.Root 'oradad.log'
+$oradadLogLines=if(Test-Path -LiteralPath $oradadLogPath){@(Get-Content -LiteralPath $oradadLogPath)}else{@()}
+
+function Convert-ADSOpenHexDescriptor([string]$Hex){
+    if(-not$Hex-or($Hex.Length%2)){return $null}
+    try{$bytes=New-Object byte[]($Hex.Length/2);for($i=0;$i-lt$bytes.Length;$i++){$bytes[$i]=[Convert]::ToByte($Hex.Substring($i*2,2),16)};New-Object Security.AccessControl.RawSecurityDescriptor($bytes,0)}catch{return $null}
+}
+function Test-ADSOpenPsoWeak($Pso){
+    $min=Get-Integer $Pso.'msDS-MinimumPasswordLength';$days=0.0
+    if([string]$Pso.'msDS-MaximumPasswordAge'-match'^(?<d>-?\d+)\.'){$days=[math]::Abs([double]$Matches.d)}
+    $min-lt8-or[string]$Pso.'msDS-PasswordComplexityEnabled'-notin@('1','TRUE','True','true')-or[string]$Pso.'msDS-PasswordReversibleEncryptionEnabled'-in@('1','TRUE','True','true')-or$days-gt1095
+}
 
 foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
     $findings=@(); $source=''; $available='Evaluated'
@@ -121,7 +138,8 @@ foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
             $source='nTSecurityDescriptor'; $explanation='Inventorie les relations ACL accordées à Everyone ou Anonymous Logon.'
         }
         'info_sd_missing_au_lc' {
-            $available='DataUnavailable';$source='nTSecurityDescriptor';$explanation='Recherche les OU dont le contenu ne peut pas être listé par les utilisateurs authentifiés.'
+            $findings=@($ous|ForEach-Object{$o=$_;$sd=Convert-ADSOpenHexDescriptor ([string]$topByDn[$o.dn].nTSecurityDescriptor);if($sd-and$sd.DiscretionaryAcl){$allow=$false;$deny=$false;foreach($ace in $sd.DiscretionaryAcl){if($ace.SecurityIdentifier.Value-in@('S-1-5-11','S-1-1-0')-and(([int64]$ace.AccessMask-band0x80000000L)-or([int64]$ace.AccessMask-band4))){if($ace.AceType-in@([Security.AccessControl.AceType]::AccessDenied,[Security.AccessControl.AceType]::AccessDeniedObject)){$deny=$true}else{$allow=$true}}};if($deny-or-not$allow){[pscustomobject]@{dn=$o.dn;Allowed=$allow;Denied=$deny}}}})
+            $source='nTSecurityDescriptor';$explanation='Recherche les OU dont le contenu ne peut pas être listé par les utilisateurs authentifiés.'
         }
         'info_sd_protected_ou' {
             $findings=@($ous|ForEach-Object{$top=$topByDn[$_.dn];if($top.nTSecurityDescriptor-match '(?i)D:P'){[pscustomobject]@{dn=$_.dn;Reason='DACL protégée'}}})
@@ -147,10 +165,10 @@ foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
             $source="$prefix\user.tsv";$explanation='Liste les comptes actifs dont le mot de passe est configuré pour ne jamais expirer.'
         }
         'warning_dump_error_rp' {
-            $available='DataUnavailable';$source='Journal détaillé de collecte ORADAD';$explanation='Repère les attributs que le compte de collecte nʼa pas été autorisé à lire.'
+            $findings=@($oradadLogLines|Where-Object{$_-match'(?i)(access denied|insufficient access|cannot read|failed.*read)'}|ForEach-Object{[pscustomobject]@{LogEntry=$_}});$source='oradad.log';$explanation='Repère les erreurs ou refus de lecture consignés par ORADAD.'
         }
         'warning_dump_error_vuln_rp' {
-            $available='DataUnavailable';$source='Journal détaillé de collecte ORADAD';$explanation='Suit les erreurs de lecture que lʼANSSI annonce comme devenant bloquantes.'
+            $findings=@($oradadLogLines|Where-Object{$_-match'(?i)(access denied|insufficient access|failed.*(security descriptor|ntsecuritydescriptor))'}|ForEach-Object{[pscustomobject]@{LogEntry=$_}});$source='oradad.log';$explanation='Recherche les erreurs critiques de lecture des descripteurs.'
         }
         'warning_logonscript_priv' {
             $findings=@($privilegedAccounts|Where-Object{$_.scriptPath}|Select-Object dn,sAMAccountName,scriptPath)
@@ -159,6 +177,21 @@ foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
         'warning_password_change' {
             $limit=$now.AddYears(-3);$findings=@($activeUsers|Where-Object{$_.pwdLastSet-and(Convert-OradadDate $_.pwdLastSet)-lt$limit}|Select-Object dn,sAMAccountName,pwdLastSet)
             $source="$prefix\user.tsv";$explanation='Recherche les comptes actifs dont le mot de passe nʼa pas changé depuis trois ans.'
+        }
+        'warning_password_policy_pso_missing' {
+            $key="$prefix\passwordSettings.tsv";if(-not $Dataset.Schemas.ContainsKey($key)){$findings=@([pscustomobject]@{ExpectedTable=$key;Reason='Table PSO absente'})};$source=$key;$explanation='Vérifie que la table PSO a été collectée.'
+        }
+        'warning_password_policy_pso_weak' {
+            $findings=@($passwordSettings|Where-Object{Test-ADSOpenPsoWeak $_}|Select-Object dn,'msDS-MinimumPasswordLength','msDS-PasswordComplexityEnabled','msDS-PasswordReversibleEncryptionEnabled','msDS-MaximumPasswordAge');$source="$prefix\passwordSettings.tsv";$explanation='Recherche les PSO faibles.'
+        }
+        'warning_password_policy_pso_weak2' {
+            $privDns=@($privilegedAccounts|ForEach-Object dn)+@($privilegedGroups|ForEach-Object dn);$findings=@($passwordSettings|Where-Object{Test-ADSOpenPsoWeak $_}|Where-Object{$targets=Split-MultiValue $_.'msDS-PSOAppliesTo';@($targets|Where-Object{$_-in$privDns}).Count}|Select-Object dn,'msDS-PSOAppliesTo','msDS-MinimumPasswordLength','msDS-MaximumPasswordAge');$source="$prefix\passwordSettings.tsv";$explanation='Recherche les PSO faibles appliquées à des objets privilégiés.'
+        }
+        'warning_permissions_specific_containers' {
+            $sensitive='(?i)^(CN=(Users|Computers|System|Managed Service Accounts|Builtin)|OU=Domain Controllers),|CN=Password Settings Container,CN=System,';$findings=@($actionableAclRelations|Where-Object{$_.TargetDn-match$sensitive-and$_.SourceDn-notin$privDns}|Select-Object SourceSid,SourceDn,TargetDn,Right,Inherited);$source='nTSecurityDescriptor';$explanation='Recherche les permissions dangereuses sur les conteneurs sensibles.'
+        }
+        'warning_privileged_members_builtin_notpriv' {
+            $findings=@($privilegedGroups|ForEach-Object{$g=$_;Split-MultiValue $g.member|ForEach-Object{$m=$principalByDn[$_];if($m-and[string]$m.adminCount-ne'1'-and(Get-PrincipalRid $m)-ne'500'){[pscustomobject]@{GroupDn=$g.dn;MemberDn=$m.dn;AdminCount=$m.adminCount}}}});$source="$prefix\group.tsv";$explanation='Recherche les membres non protégés des groupes privilégiés intégrés.'
         }
         'warning_privileged_members' {
             $threshold=[math]::Max(50,3*[math]::Max(1,@($crossRefs|Where-Object dnsRoot).Count));if($privilegedAccountsForCount.Count-gt$threshold){$findings=@([pscustomobject]@{Count=$privilegedAccountsForCount.Count;Threshold=$threshold})}
@@ -187,6 +220,18 @@ foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
         'warning_rid500' {
             $limit=$now.AddDays(-30);$findings=@($users|Where-Object{$_.objectSid-match'-500$'-and $_.lastLogonTimestamp-and(Convert-OradadDate $_.lastLogonTimestamp)-ge$limit}|Select-Object dn,sAMAccountName,lastLogonTimestamp)
             $source="$prefix\user.tsv";$explanation='Vérifie si le compte Administrateur intégré RID 500 a été utilisé récemment.'
+        }
+        'warning_schema_default_sd' {
+            $classes=@(Get-OradadRows $Dataset 'schema\class.tsv');$expectedRodcSid="$domainSid-498";$findings=@($classes|Where-Object{$s=[string]$_.defaultSecurityDescriptor;$s-match'(?i)S-1-5-21-'-and$s-notmatch[regex]::Escape($expectedRodcSid)}|Select-Object dn,lDAPDisplayName,defaultSecurityDescriptor);$source='schema\class.tsv';$explanation='Recherche des SID de domaine non standard dans les descripteurs par défaut du schéma, hors SID RODC attendu.'
+        }
+        'warning_sd_adminsdholder_protec' {
+            $a=$allObjects|Where-Object dn -like 'CN=AdminSDHolder,CN=System,*'|Select-Object -First 1;$sd=if($a){Convert-ADSOpenHexDescriptor ([string]$a.nTSecurityDescriptor)};if(-not$sd-or($sd.ControlFlags-band[Security.AccessControl.ControlFlags]::DiscretionaryAclProtected)-eq0){$findings=@([pscustomobject]@{Dn=$a.dn;Reason='DACL AdminSDHolder absente, invalide ou non protégée'})};$source='nTSecurityDescriptor AdminSDHolder';$explanation='Vérifie la protection de la DACL AdminSDHolder.'
+        }
+        'warning_sd_deny_read' {
+            $findings=@($allObjects|ForEach-Object{$o=$_;$sd=Convert-ADSOpenHexDescriptor ([string]$o.nTSecurityDescriptor);if($sd-and$sd.DiscretionaryAcl){foreach($ace in $sd.DiscretionaryAcl){if($ace.AceType-in@([Security.AccessControl.AceType]::AccessDenied,[Security.AccessControl.AceType]::AccessDeniedObject)-and([int64]$ace.AccessMask-band0x00020014L)){[pscustomobject]@{Dn=$o.dn;SourceSid=$ace.SecurityIdentifier.Value;AccessMask=$ace.AccessMask}}}}});$source='nTSecurityDescriptor';$explanation='Inventorie les refus explicites affectant la lecture.'
+        }
+        'warning_sd_failed_sd_read' {
+            $findings=@($allObjects|Where-Object{$_.dn-and-not$_.nTSecurityDescriptor}|Select-Object dn,@{n='Reason';e={'Descripteur absent'}})+@($acl.ParseErrors|Select-Object Dn,@{n='Reason';e={$_.Error}});$source='nTSecurityDescriptor';$explanation='Recherche les objets sans descripteur exploitable.'
         }
         'warning_schema_posssuperiors' {
             $findings=@($Dataset.Cache['schema\class.tsv']|Where-Object{$_.possSuperiors}|Select-Object dn,lDAPDisplayName,possSuperiors)
@@ -217,14 +262,17 @@ foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
             $source="$prefix\sysvol.tsv";$explanation='Inventorie les ACE explicites présentes sur les fichiers de GPO.'
         }
         'warning_sysvol_files_sd' {
-            $available='DataUnavailable';$source="$prefix\sysvol.tsv et référentiel de descripteurs par défaut";$explanation='Compare les options des descripteurs de sécurité des fichiers de GPO à leur valeur attendue.'
+            $findings=@($sysvol|Where-Object{$_.filename-and$_.securitydescriptor}|ForEach-Object{$r=$_;$sd=Convert-ADSOpenHexDescriptor ([string]$r.securitydescriptor);if(-not$sd){[pscustomobject]@{path=$r.path;filename=$r.filename;Reason='Descripteur indécodable'}}elseif(($sd.ControlFlags-band[Security.AccessControl.ControlFlags]::DiscretionaryAclProtected)-ne0-and$r.path-match'(?i)Policies\{'){[pscustomobject]@{path=$r.path;filename=$r.filename;Reason='Héritage DACL désactivé'}}});$source="$prefix\sysvol.tsv";$explanation='Vérifie les options dʼhéritage des descripteurs des fichiers GPO.'
         }
         'warning_sysvol_no_repl' {
             $dfsr=@($Dataset.Schemas.Keys|Where-Object{$_-match'(?i)dfsr'});if(-not$ntfrs.Count-and-not$dfsr.Count){$findings=@([pscustomobject]@{Reason='Aucun objet NTFRS ou DFSR collecté'})}
             $source='tables NTFRS/DFSR';$explanation='Vérifie quʼun mécanisme de réplication SYSVOL est défini.'
         }
         'warning_sysvol_root_sd' {
-            $available='DataUnavailable';$source="$prefix\sysvol.tsv et référentiel de descripteurs par défaut";$explanation='Compare les descripteurs des répertoires racines de GPO à leur valeur attendue.'
+            $roots=@($sysvol|Where-Object{$_.filename-match'^{[0-9A-Fa-f-]{36}}$'});$findings=@($roots|ForEach-Object{$r=$_;$sd=Convert-ADSOpenHexDescriptor ([string]$r.securitydescriptor);if(-not$sd-or-not$sd.DiscretionaryAcl){[pscustomobject]@{path=$r.path;filename=$r.filename;Reason='Descripteur absent ou indécodable'}}});$source="$prefix\sysvol.tsv";$explanation='Vérifie les descripteurs des répertoires racines de GPO.'
+        }
+        'warning_tool_version' {
+            $v=[string]$metadata['oradad_version'];$parsed=$null;try{$parsed=[version]($v-replace'[^0-9.]','')}catch{};if(-not$parsed-or$parsed-lt[version]'3.6.0.220'){$findings=@([pscustomobject]@{DetectedVersion=$v;MinimumSupportedVersion='3.6.0.220'})};$source='metadata.tsv';$explanation='Vérifie que la version ORADAD est connue et suffisamment récente.'
         }
         'warning_trusts_tgt_deleg' {
             $findings=@($tgtDeleg);$source="$prefix\trustedDomain.tsv";$explanation='Recherche les approbations entrantes autorisant la délégation TGT.'

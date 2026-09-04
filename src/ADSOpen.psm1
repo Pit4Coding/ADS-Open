@@ -1,6 +1,6 @@
 ﻿Set-StrictMode -Version 2.0
 
-$script:ADSOpenVersion = '1.3.3'
+$script:ADSOpenVersion = '1.4.0'
 
 . (Join-Path $PSScriptRoot 'ControlLoader.ps1')
 
