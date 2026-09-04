@@ -49,9 +49,10 @@ internes non publiées du service ADS.
 
 À partir de la version 1.2.0, le rapport distingue trois catégories ANSSI :
 
-- 76 vulnérabilités (`vuln_*`), seules susceptibles de produire un échec et
+- 76 vulnérabilités ANSSI (`vuln_*`), seules susceptibles de produire un échec et
   d'influencer le niveau global ou les points cumulés ;
-- 37 avertissements (`warning_*`), présentés sans effet sur la note ;
+- 37 avertissements ANSSI (`warning_*`) et les avertissements complémentaires ADS-Open,
+  dont `warning_adsopen_passwd_notreqd`, sans effet sur la note ;
 - 13 informations (`info_*`), également sans effet sur la note.
 
 Depuis la version 1.3.0, chacune des 76 vulnérabilités comporte une section

@@ -11,15 +11,15 @@ try {
     if (-not (Test-Path (Join-Path $out 'report.json'))) { throw 'report.json absent' }
     if (-not (Test-Path (Join-Path $out 'report.html'))) { throw 'report.html absent' }
     $report = Get-Content (Join-Path $out 'report.json') -Raw | ConvertFrom-Json
-    if ($report.Version -ne '1.4.1') { throw "Version ADS-Open inattendue: $($report.Version)" }
+    if ($report.Version -ne '1.5.0') { throw "Version ADS-Open inattendue: $($report.Version)" }
     $html = Get-Content (Join-Path $out 'report.html') -Raw
-    if ($html -notmatch 'Version ADS-Open</span><b>v1\.4\.1</b>') {
+    if ($html -notmatch 'Version ADS-Open</span><b>v1\.5\.0</b>') {
         throw 'Version ADS-Open absente de l''en-tête HTML'
     }
-    if ($report.Advisories.Count -ne 50) { throw "Catalogue complémentaire ANSSI incomplet: $($report.Advisories.Count)/50" }
-    if (@($report.Advisories | Where-Object Type -eq 'Warning').Count -ne 37) { throw 'Nombre d''avertissements ANSSI invalide' }
-    if (@($report.Advisories | Where-Object Type -eq 'Information').Count -ne 13) { throw 'Nombre d''informations ANSSI invalide' }
-    if (@($report.Advisories | Where-Object { -not $_.PublishedDate }).Count -ne 0) { throw 'Un item complémentaire ne possède pas de date ANSSI publiée' }
+    if ($report.Advisories.Count -ne 51) { throw "Nombre total dʼobservations complémentaires inattendu: $($report.Advisories.Count)/51" }
+    if (@($report.Advisories | Where-Object { $_.Type -eq 'Warning' -and $_.Origin -eq 'ANSSI' }).Count -ne 37) { throw 'Nombre d''avertissements ANSSI invalide' }
+    if (@($report.Advisories | Where-Object { $_.Type -eq 'Information' -and $_.Origin -eq 'ANSSI' }).Count -ne 13) { throw 'Nombre d''informations ANSSI invalide' }
+    if (@($report.Advisories | Where-Object { $_.Origin -eq 'ANSSI' -and -not $_.PublishedDate }).Count -ne 0) { throw 'Un item complémentaire ANSSI ne possède pas de date publiée' }
     if (@($report.Advisories | Where-Object { -not $_.Explanation -or -not $_.ResultSummary }).Count -ne 0) { throw 'Un item complémentaire ne possède pas d''explication ou de résultat' }
     if (@($report.Advisories | Where-Object AffectsScore).Count -ne 0) { throw 'Un item complémentaire influence la note' }
     if (@($report.Advisories | Where-Object Status -eq 'DataUnavailable').Count -ne 0) { throw 'Des observations complémentaires restent non évaluées malgré un extract ORADAD complet' }
@@ -32,7 +32,7 @@ try {
     if ($datedWarning.PublishedDate -ne '2018-09-27') { throw 'Date ANSSI de warning_admincount invalide' }
     if ($html -notmatch 'Observations complémentaires ANSSI' -or $html -notmatch 'Avertissements ANSSI' -or $html -notmatch 'Informations ANSSI') { throw 'Sections complémentaires absentes du rapport HTML' }
     if ($html -notmatch 'overflow-wrap:anywhere' -or $html -notmatch 'minmax\(min\(100%,340px\),1fr\)') { throw 'Protection responsive des cartes absente' }
-    if ($report.Controls.Count -ne 76) { throw "Catalogue ANSSI incomplet: $($report.Controls.Count)/76" }
+    if ($report.Controls.Count -ne 76) { throw 'Catalogue ANSSI incomplet' }
     if (@($report.Controls.Id | Sort-Object -Unique).Count -ne 76) { throw 'Identifiants ANSSI dupliqués' }
     if (@($report.Controls | Where-Object Status -eq 'NotEvaluated').Count -ne 0) {
         throw 'Des contrôles sont encore non évalués'
@@ -74,6 +74,13 @@ try {
         if ($control.Status -ne 'Passed') {
             throw "$id doit ignorer les ACE des groupes opératifs intégrés vides dans l'extract de test"
         }
+    }
+    $passwdNotReqd = $report.Advisories | Where-Object Id -eq 'warning_adsopen_passwd_notreqd' | Select-Object -First 1
+    if ($passwdNotReqd.Status -ne 'Detected' -or $passwdNotReqd.Origin -ne 'ADS-Open' -or $passwdNotReqd.AffectsScore) {
+        throw 'PASSWD_NOTREQD doit être un avertissement ADS-Open détecté sans effet sur la note'
+    }
+    if (@($passwdNotReqd.Findings | Where-Object { $_.sAMAccountName -eq 'Guest' }).Count -ne 0) {
+        throw 'Le compte Invité désactivé ne doit pas être remonté par PASSWD_NOTREQD'
     }
     $heuristics = $report.Controls | Where-Object Id -eq 'vuln_dsheuristics_bad' | Select-Object -First 1
     if ($heuristics.Status -ne 'Failed' -or (@($heuristics.FailedLevels) -join ',') -ne '4') {

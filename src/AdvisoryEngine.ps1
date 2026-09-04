@@ -44,7 +44,7 @@ function New-AdvisoryResult {
         elseif ($status -eq 'Observed') { "$findingCount élément(s) inventorié(s)." }
         else { 'Les données requises ne sont pas présentes dans cet extract ORADAD.' }
     [pscustomobject]@{
-        Id=$Item.Id; Type=$type; Title=$Item.Title
+        Id=$Item.Id; Type=$type; Title=$Item.Title; Origin='ANSSI'
         Levels=@($Item.Levels -split ',' | Where-Object { $_ } | ForEach-Object { [int]$_ })
         PublishedDate=$Item.PublishedDate
         PublishedDateDisplay=([datetime]::ParseExact($Item.PublishedDate,'yyyy-MM-dd',
@@ -287,5 +287,20 @@ foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
     }
     $advisoryResults.Add((New-AdvisoryResult $item $findings $explanation $recommendation $source $available))
 }
+$passwdNotRequired = @($activeUsers | Where-Object { Test-UacFlag $_ 0x20 } |
+    Select-Object dn,sAMAccountName,userAccountControl,userAccountControl_int)
+$passwdStatus = if ($passwdNotRequired.Count) { 'Detected' } else { 'NotDetected' }
+$advisoryResults.Add([pscustomobject]@{
+    Id='warning_adsopen_passwd_notreqd'; Type='Warning'; Origin='ADS-Open'
+    Title='Mot de passe non requis sur un compte utilisateur actif'; Levels=@(1)
+    PublishedDate='2026-09-05'; PublishedDateDisplay='05/09/2026'
+    Status=$passwdStatus
+    ResultSummary=$(if ($passwdStatus -eq 'Detected') { "$($passwdNotRequired.Count) compte(s) utilisateur(s) actif(s) portent PASSWD_NOTREQD." } else { 'Aucun compte utilisateur actif portant PASSWD_NOTREQD nʼa été détecté.' })
+    FindingCount=$passwdNotRequired.Count; Findings=@($passwdNotRequired | Select-Object -First 200)
+    Explanation="Contrôle complémentaire ADS-Open du bit 0x20 (PASSWD_NOTREQD) de userAccountControl. Les comptes désactivés, dont le compte Invité désactivé, sont exclus."
+    Recommendation=$(if ($passwdStatus -eq 'Detected') { 'Supprimer PASSWD_NOTREQD, définir un mot de passe robuste et vérifier le processus ayant positionné ce drapeau.' } else { '' })
+    DataSource="$prefix\user.tsv"; Availability='Evaluated'; AffectsScore=$false; Reference=''
+})
+
 Set-StrictMode -Version 2.0
 @($advisoryResults)

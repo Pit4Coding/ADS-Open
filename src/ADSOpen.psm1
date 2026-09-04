@@ -1,6 +1,6 @@
 ﻿Set-StrictMode -Version 2.0
 
-$script:ADSOpenVersion = '1.4.1'
+$script:ADSOpenVersion = '1.5.0'
 
 . (Join-Path $PSScriptRoot 'ControlLoader.ps1')
 
@@ -870,8 +870,12 @@ function New-ADSOpenHtml {
         $kindLabel = if ($type -eq 'Warning') { 'Avertissement' } else { 'Information' }
         $kindClass = $type.ToLowerInvariant()
         $cards = foreach ($item in $items) {
+            $itemOrigin = if ($item.PSObject.Properties['Origin']) { [string]$item.Origin } else { 'ANSSI' }
+            $itemKindLabel = if ($itemOrigin -eq 'ANSSI') { $kindLabel } else { "$kindLabel ADS-Open" }
+            $levelTitlePrefix = if ($itemOrigin -eq 'ANSSI') { 'Niveau ANSSI indicatif' } else { 'Criticité ADS-Open indicative' }
+            $dateLabel = if ($itemOrigin -eq 'ANSSI') { 'Date ANSSI' } else { 'Date ADS-Open' }
             $badges = foreach ($level in $item.Levels) {
-                "<span class=`"level level$level`" title=`"Niveau ANSSI indicatif $level`">$level</span>"
+                "<span class=`"level level$level`" title=`"$levelTitlePrefix $level`">$level</span>"
             }
             $levelMarkup = if (@($badges).Count) { "<p><b>Niveau(x) indicatif(s) :</b> $($badges -join '')</p>" } else { '' }
             $statusLabel = switch ($item.Status) {
@@ -888,10 +892,10 @@ function New-ADSOpenHtml {
             $recommendationMarkup = if ($item.Recommendation) { "<p class=`"recommendation`"><b>Recommandation :</b> $(ConvertTo-HtmlEncoded $item.Recommendation)</p>" } else { '' }
             @"
 <article class="advisory $kindClass $($item.Status.ToLowerInvariant())">
-  <header><code>$(ConvertTo-HtmlEncoded $item.Id)</code><span class="item-kind kind-$kindClass">$kindLabel</span><span class="advisory-status">$statusLabel</span></header>
+  <header><code>$(ConvertTo-HtmlEncoded $item.Id)</code><span class="item-kind kind-$kindClass">$itemKindLabel</span><span class="advisory-status">$statusLabel</span></header>
   <h3>$(ConvertTo-HtmlEncoded $item.Title)</h3>
   $levelMarkup
-  <p><b>Date ANSSI :</b> $(ConvertTo-HtmlEncoded $item.PublishedDateDisplay)</p>
+  <p><b>$dateLabel :</b> $(ConvertTo-HtmlEncoded $item.PublishedDateDisplay)</p>
   <p>$(ConvertTo-HtmlEncoded $item.Explanation)</p>
   <p class="result-summary"><b>Résultat :</b> $(ConvertTo-HtmlEncoded $item.ResultSummary)</p>
   $details
