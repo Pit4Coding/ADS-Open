@@ -1,6 +1,6 @@
 ﻿Set-StrictMode -Version 2.0
 
-$script:ADSOpenVersion = '1.4.0'
+$script:ADSOpenVersion = '1.4.1'
 
 . (Join-Path $PSScriptRoot 'ControlLoader.ps1')
 
@@ -9,7 +9,11 @@ $guidancePath = Join-Path (Split-Path $PSScriptRoot -Parent) 'data\anssi-control
 if (-not (Test-Path -LiteralPath $guidancePath)) {
     throw "Catalogue ANSSI hors ligne introuvable : $guidancePath. Le rapport ne peut pas être généré sans ses fiches détaillées."
 }
-foreach ($guidance in @(Get-Content -Raw -LiteralPath $guidancePath | ConvertFrom-Json)) {
+$guidanceDocument = Get-Content -Raw -LiteralPath $guidancePath | ConvertFrom-Json
+# Windows PowerShell 5.1 conserve le tableau JSON comme un objet de pipeline
+# unique. Une itération indexée garantit le même comportement sous PS 5.1 et 7.
+for ($guidanceIndex = 0; $guidanceIndex -lt $guidanceDocument.Count; $guidanceIndex++) {
+    $guidance = $guidanceDocument[$guidanceIndex]
     if ($guidance.Id -and $guidance.Description -and $guidance.Recommendation -and $guidance.ReviewedOn) {
         $script:AnssiControlGuidance[[string]$guidance.Id] = $guidance
     }
