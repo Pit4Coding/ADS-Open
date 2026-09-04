@@ -38,7 +38,7 @@ foreach ($computer in @($computers | Where-Object { $_.primaryGroupID -in @('516
         }
         if ($ntds -and (Get-OradadValue $computer 'operatingSystem') -match 'Windows Server (2008 R2|2012 R2|2008|2012|2016|2019|2022|2025)') {
             $expectedBehavior = switch ($Matches[1]) {
-                '2008' { 3 }; '2008 R2' { 4 }; '2012' { 5 }; '2012 R2' { 6 }; default { 7 }
+                '2008' { 3 }; '2008 R2' { 4 }; '2012' { 5 }; '2012 R2' { 6 }; '2025' { 10 }; default { 7 }
             }
             $actualBehavior = 0
             if (-not [int]::TryParse([string](Get-OradadValue $ntds 'msDS-Behavior-Version'), [ref]$actualBehavior) -or $actualBehavior -ne $expectedBehavior) {

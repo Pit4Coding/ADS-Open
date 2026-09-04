@@ -11,9 +11,9 @@ try {
     if (-not (Test-Path (Join-Path $out 'report.json'))) { throw 'report.json absent' }
     if (-not (Test-Path (Join-Path $out 'report.html'))) { throw 'report.html absent' }
     $report = Get-Content (Join-Path $out 'report.json') -Raw | ConvertFrom-Json
-    if ($report.Version -ne '1.5.0') { throw "Version ADS-Open inattendue: $($report.Version)" }
+    if ($report.Version -ne '1.5.1') { throw "Version ADS-Open inattendue: $($report.Version)" }
     $html = Get-Content (Join-Path $out 'report.html') -Raw
-    if ($html -notmatch 'Version ADS-Open</span><b>v1\.5\.0</b>') {
+    if ($html -notmatch 'Version ADS-Open</span><b>v1\.5\.1</b>') {
         throw 'Version ADS-Open absente de l''en-tête HTML'
     }
     if ($report.Advisories.Count -ne 51) { throw "Nombre total dʼobservations complémentaires inattendu: $($report.Advisories.Count)/51" }
@@ -87,6 +87,10 @@ try {
         throw 'dSHeuristics par défaut doit uniquement échouer au seuil de durcissement ANSSI niveau 4'
     }
     if ($report.Score.Level -notin 1..5) { throw 'Niveau invalide' }
+    $dcConsistencySource = Get-Content (Join-Path $project 'src\Controls\vuln_dc_inconsistent_uac.ps1') -Raw
+    if ($dcConsistencySource -notmatch "'2025'\s*\{\s*10\s*\}") {
+        throw 'Windows Server 2025 doit correspondre à msDS-Behavior-Version 10'
+    }
     "OK - $($report.Controls.Count) contrôles, niveau $($report.Score.Level)"
 }
 finally {
