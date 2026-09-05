@@ -11,9 +11,9 @@ try {
     if (-not (Test-Path (Join-Path $out 'report.json'))) { throw 'report.json absent' }
     if (-not (Test-Path (Join-Path $out 'report.html'))) { throw 'report.html absent' }
     $report = Get-Content (Join-Path $out 'report.json') -Raw | ConvertFrom-Json
-    if ($report.Version -ne '1.5.1') { throw "Version ADS-Open inattendue: $($report.Version)" }
+    if ($report.Version -ne '1.6.0') { throw "Version ADS-Open inattendue: $($report.Version)" }
     $html = Get-Content (Join-Path $out 'report.html') -Raw
-    if ($html -notmatch 'Version ADS-Open</span><b>v1\.5\.1</b>') {
+    if ($html -notmatch 'Version ADS-Open</span><b>v1\.6\.0</b>') {
         throw 'Version ADS-Open absente de l''en-tête HTML'
     }
     if ($report.Advisories.Count -ne 51) { throw "Nombre total dʼobservations complémentaires inattendu: $($report.Advisories.Count)/51" }
@@ -32,6 +32,12 @@ try {
     if ($datedWarning.PublishedDate -ne '2018-09-27') { throw 'Date ANSSI de warning_admincount invalide' }
     if ($html -notmatch 'Observations complémentaires ANSSI' -or $html -notmatch 'Avertissements ANSSI' -or $html -notmatch 'Informations ANSSI') { throw 'Sections complémentaires absentes du rapport HTML' }
     if ($html -notmatch 'overflow-wrap:anywhere' -or $html -notmatch 'minmax\(min\(100%,340px\),1fr\)') { throw 'Protection responsive des cartes absente' }
+    if ($html -notmatch 'class="level-overview"' -or $html -notmatch '\d+ / \d+ en échec') { throw 'Synthèse échecs/total par niveau absente' }
+    if ($html -notmatch 'class="control-table"' -or $html -notmatch 'class="control-entry"') { throw 'Tableaux de contrôles dépliables absents' }
+    if (([regex]::Matches($html, 'class="control-table advisory-table"')).Count -ne 2) { throw 'Tableaux des avertissements et informations absents' }
+    if (([regex]::Matches($html, 'class="control-entry advisory-entry"')).Count -ne 51) { throw 'Items complémentaires dépliables incomplets' }
+    if ($html -notmatch 'Avertissements ANSSI et ADS-Open' -or $html -notmatch 'Informations ANSSI') { throw 'Titres des tableaux complémentaires invalides' }
+    if ($html -notmatch 'Constats \(' -or $html -notmatch 'Recommandation de résolution') { throw 'Détails dépliables ou recommandation absents' }
     if ($report.Controls.Count -ne 76) { throw 'Catalogue ANSSI incomplet' }
     if (@($report.Controls.Id | Sort-Object -Unique).Count -ne 76) { throw 'Identifiants ANSSI dupliqués' }
     if (@($report.Controls | Where-Object Status -eq 'NotEvaluated').Count -ne 0) {

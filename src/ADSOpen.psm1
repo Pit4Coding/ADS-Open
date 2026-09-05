@@ -1,6 +1,6 @@
 ﻿Set-StrictMode -Version 2.0
 
-$script:ADSOpenVersion = '1.5.1'
+$script:ADSOpenVersion = '1.6.0'
 
 . (Join-Path $PSScriptRoot 'ControlLoader.ps1')
 
@@ -797,7 +797,26 @@ function ConvertTo-AnssiGuidanceHtml {
 }
 function New-ADSOpenHtml {
     param($Audit)
-    $cardById = @{}
+    $levelNames = @{
+        1 = 'Mesures indispensables'; 2 = 'Mesures prioritaires'; 3 = 'Renforcement recommandé'
+        4 = 'Niveau avancé'; 5 = 'Niveau maîtrisé'
+    }
+    $levelDescriptions = @{
+        1 = 'Mesures indispensables à appliquer en priorité pour réduire les risques critiques.'
+        2 = 'Mesures prioritaires nécessaires à une administration Active Directory robuste.'
+        3 = 'Mesures de renforcement recommandées pour consolider la sécurité du domaine.'
+        4 = 'Mesures avancées destinées aux environnements ayant déjà atteint un bon niveau de maîtrise.'
+        5 = 'Mesures permettant de maintenir une posture Active Directory durablement maîtrisée.'
+    }
+    $controlsByLevel = @{}
+    foreach ($level in 1..5) {
+        $controlsByLevel[$level] = @($Audit.Controls | Where-Object {
+            $classificationLevels = if ($_.Status -eq 'Failed' -and
+                ($_.FailedLevels | Measure-Object).Count) { $_.FailedLevels } else { $_.Levels }
+            [int](($classificationLevels | Measure-Object -Minimum).Minimum) -eq $level
+        } | Sort-Object @{Expression={if ($_.Status -eq 'Failed') { 0 } else { 1 }}}, Title)
+    }
+    $rowById = @{}
     foreach ($control in $Audit.Controls) {
         $statusMarkup = switch ($control.Status) {
             'Passed' { '<span class="status-icon status-passed" role="img" aria-label="Validé" title="Validé">&#10003;</span>' }
@@ -809,105 +828,127 @@ function New-ADSOpenHtml {
             $title = if ($failedClass) { "Seuil ANSSI $level en échec" } else { "Niveau ANSSI $level applicable" }
             "<span class=`"level level$level$failedClass`" title=`"$title`">$level</span>"
         }
-        $details = if ($control.FindingCount) {
+        $findingContent = if ($control.FindingCount) {
             $items = foreach ($finding in @($control.Findings | Select-Object -First 100)) {
-                $text = ($finding.PSObject.Properties | ForEach-Object {
+                $findingText = ($finding.PSObject.Properties | ForEach-Object {
                     "$(ConvertTo-HtmlEncoded $_.Name): $(ConvertTo-HtmlEncoded $_.Value)"
                 }) -join ' · '
-                "<li>$text</li>"
+                "<li>$findingText</li>"
             }
-            "<details><summary>$($control.FindingCount) constat(s)</summary><ul>$($items -join '')</ul></details>"
-        } else { '' }
-        $cardById[$control.Id] = @"
-<article class="control $($control.Status.ToLowerInvariant())">
-  <header><code>$(ConvertTo-HtmlEncoded $control.Id)</code><span class="item-kind kind-vulnerability">Vulnérabilité</span>$statusMarkup</header>
-  <h3>$(ConvertTo-HtmlEncoded $control.Title)</h3>
-  <details class="control-guidance">
-    <summary>Description détaillée</summary>
-    <div class="guidance-content">
-      <h4>Description et portée ANSSI</h4>
-      $(ConvertTo-AnssiGuidanceHtml $control.DetailedDescription)
-      <h4>Recommandations, annotations, limites et acceptations</h4>
-      $(ConvertTo-AnssiGuidanceHtml $control.OfficialRecommendation)
-      <p class="guidance-source">Copie locale du référentiel ANSSI vérifiée le $(ConvertTo-HtmlEncoded $control.GuidanceReviewedOn) — consultation hors ligne.</p>
-    </div>
-  </details>
-  <p class="levels"><b>Niveau(x) :</b> $($levelBadges -join '')$(if ($control.Status -eq 'Failed') {" · <b>Seuil(s) en échec :</b> $(@($control.FailedLevels) -join ', ')"}) · <b>Source :</b> $(ConvertTo-HtmlEncoded $control.DataSource)</p>
-  $details
-  <p class="recommendation">$(ConvertTo-HtmlEncoded $control.Recommendation)</p>
-</article>
+            "<ul>$($items -join '')</ul>"
+        } else { '<p>Aucun constat.</p>' }
+        $rowById[$control.Id] = @"
+<tr class="control-table-row $($control.Status.ToLowerInvariant())">
+  <td colspan="3">
+    <details class="control-entry">
+      <summary>
+        <span class="control-id"><span class="row-chevron" aria-hidden="true"></span><code>$(ConvertTo-HtmlEncoded $control.Id)</code></span>
+        <span class="control-title">$(ConvertTo-HtmlEncoded $control.Title)</span>
+        <span class="control-state">$statusMarkup</span>
+      </summary>
+      <div class="control-detail">
+        <p class="levels"><b>Niveau(x) :</b> $($levelBadges -join '')$(if ($control.Status -eq 'Failed') {" · <b>Seuil(s) en échec :</b> $(@($control.FailedLevels) -join ', ')"}) · <b>Source :</b> $(ConvertTo-HtmlEncoded $control.DataSource)</p>
+        <details class="control-subdetail"><summary>Constats ($($control.FindingCount))</summary><div class="subdetail-content">$findingContent</div></details>
+        <details class="control-subdetail control-guidance"><summary>Description détaillée</summary>
+          <div class="guidance-content">
+            <h4>Description et portée ANSSI</h4>
+            $(ConvertTo-AnssiGuidanceHtml $control.DetailedDescription)
+            <h4>Recommandations, annotations, limites et acceptations</h4>
+            $(ConvertTo-AnssiGuidanceHtml $control.OfficialRecommendation)
+            <p class="guidance-source">Copie locale du référentiel ANSSI vérifiée le $(ConvertTo-HtmlEncoded $control.GuidanceReviewedOn) — consultation hors ligne.</p>
+          </div>
+        </details>
+        <div class="recommendation"><b>Recommandation de résolution</b><br>$(ConvertTo-HtmlEncoded $control.Recommendation)</div>
+      </div>
+    </details>
+  </td>
+</tr>
 "@
     }
-    $levelNames = @{
-        1 = 'Mesures indispensables'
-        2 = 'Mesures prioritaires'
-        3 = 'Renforcement recommandé'
-        4 = 'Niveau avancé'
-        5 = 'Niveau maîtrisé'
+    $levelOverview = foreach ($level in 1..5) {
+        $levelControls = @($controlsByLevel[$level])
+        $failedCount = @($levelControls | Where-Object Status -eq 'Failed').Count
+        @"
+<a href="#niveau-$level" class="level-overview-item"><span class="level level$level">$level</span><span><b>Niveau $level</b><strong>$failedCount / $($levelControls.Count) en échec</strong></span></a>
+"@
     }
     $sections = foreach ($level in 1..5) {
-        $levelControls = @($Audit.Controls | Where-Object {
-            $classificationLevels = if ($_.Status -eq 'Failed' -and
-                ($_.FailedLevels | Measure-Object).Count) { $_.FailedLevels } else { $_.Levels }
-            [int](($classificationLevels | Measure-Object -Minimum).Minimum) -eq $level
-        } | Sort-Object @{Expression={if ($_.Status -eq 'Failed') { 0 } else { 1 }}}, Title)
-        $failedCount = ($levelControls | Where-Object Status -eq 'Failed' | Measure-Object).Count
-        $passedCount = ($levelControls | Where-Object Status -eq 'Passed' | Measure-Object).Count
-        $sectionCards = @($levelControls | ForEach-Object { $cardById[$_.Id] })
+        $levelControls = @($controlsByLevel[$level])
+        $failedCount = @($levelControls | Where-Object Status -eq 'Failed').Count
+        $passedCount = @($levelControls | Where-Object Status -eq 'Passed').Count
+        $sectionRows = @($levelControls | ForEach-Object { $rowById[$_.Id] })
         @"
 <section class="level-section" id="niveau-$level">
   <header class="level-heading">
-    <div><span class="level level$level">$level</span><h2>Niveau $level — $($levelNames[$level])</h2></div>
+    <div><span class="level level$level">$level</span><div><h2>Niveau $level — $($levelNames[$level])</h2><p class="level-description">$($levelDescriptions[$level])</p></div></div>
     <p><b>$failedCount échec(s)</b> · $passedCount validé(s) · $($levelControls.Count) contrôle(s)</p>
   </header>
-  <div class="controls">$($sectionCards -join "`n")</div>
+  <div class="control-table-wrap"><table class="control-table"><thead><tr><th>ID du contrôle</th><th>Description</th><th>État</th></tr></thead><tbody>$($sectionRows -join "`n")</tbody></table></div>
 </section>
 "@
     }
     $advisorySections = foreach ($type in @('Warning','Information')) {
         $items = @($Audit.Advisories | Where-Object Type -eq $type)
-        $label = if ($type -eq 'Warning') { 'Avertissements' } else { 'Informations' }
-        $kindLabel = if ($type -eq 'Warning') { 'Avertissement' } else { 'Information' }
-        $kindClass = $type.ToLowerInvariant()
-        $cards = foreach ($item in $items) {
+        $label = if ($type -eq 'Warning') { 'Avertissements ANSSI et ADS-Open' } else { 'Informations ANSSI' }
+        $sectionDescription = if ($type -eq 'Warning') {
+            'Éléments nécessitant une vérification ou une vigilance particulière, sans effet sur la note globale.'
+        } else {
+            'Éléments contextuels destinés à enrichir la compréhension de l''environnement audité.'
+        }
+        $rows = foreach ($item in $items) {
             $itemOrigin = if ($item.PSObject.Properties['Origin']) { [string]$item.Origin } else { 'ANSSI' }
-            $itemKindLabel = if ($itemOrigin -eq 'ANSSI') { $kindLabel } else { "$kindLabel ADS-Open" }
+            $itemKindLabel = if ($itemOrigin -eq 'ANSSI') { $type } else { "$type ADS-Open" }
             $levelTitlePrefix = if ($itemOrigin -eq 'ANSSI') { 'Niveau ANSSI indicatif' } else { 'Criticité ADS-Open indicative' }
             $dateLabel = if ($itemOrigin -eq 'ANSSI') { 'Date ANSSI' } else { 'Date ADS-Open' }
             $badges = foreach ($level in $item.Levels) {
                 "<span class=`"level level$level`" title=`"$levelTitlePrefix $level`">$level</span>"
             }
-            $levelMarkup = if (@($badges).Count) { "<p><b>Niveau(x) indicatif(s) :</b> $($badges -join '')</p>" } else { '' }
+            $levelMarkup = if (@($badges).Count) { "<b>Niveau(x) indicatif(s) :</b> $($badges -join '') · " } else { '' }
             $statusLabel = switch ($item.Status) {
                 'Detected' { 'Détecté' }; 'NotDetected' { 'Non détecté' }
-                'Observed' { 'Observation' }; default { 'Données indisponibles' }
+                'Observed' { 'Information disponible' }; default { 'Données indisponibles' }
             }
-            $details = if ($item.FindingCount) {
+            $statusMarkup = switch ($item.Status) {
+                'Detected' { '<span class="status-icon advisory-detected" role="img" aria-label="Détecté" title="Détecté">!</span>' }
+                'NotDetected' { '<span class="status-icon status-passed" role="img" aria-label="Non détecté" title="Non détecté">&#10003;</span>' }
+                'Observed' { '<span class="status-icon advisory-observed" role="img" aria-label="Information disponible" title="Information disponible">i</span>' }
+                default { '<span class="status-icon status-unknown" role="img" aria-label="Données indisponibles" title="Données indisponibles">?</span>' }
+            }
+            $findingContent = if ($item.FindingCount) {
                 $itemsMarkup = foreach ($finding in @($item.Findings | Select-Object -First 100)) {
                     $findingText = ($finding.PSObject.Properties | ForEach-Object { "$(ConvertTo-HtmlEncoded $_.Name): $(ConvertTo-HtmlEncoded $_.Value)" }) -join ' · '
                     "<li>$findingText</li>"
                 }
-                "<details><summary>$($item.FindingCount) élément(s)</summary><ul>$($itemsMarkup -join '')</ul></details>"
+                "<ul>$($itemsMarkup -join '')</ul>"
+            } else { '<p>Aucun élément.</p>' }
+            $recommendationMarkup = if ($item.Recommendation) {
+                "<div class=`"recommendation`"><b>Recommandation</b><br>$(ConvertTo-HtmlEncoded $item.Recommendation)</div>"
             } else { '' }
-            $recommendationMarkup = if ($item.Recommendation) { "<p class=`"recommendation`"><b>Recommandation :</b> $(ConvertTo-HtmlEncoded $item.Recommendation)</p>" } else { '' }
             @"
-<article class="advisory $kindClass $($item.Status.ToLowerInvariant())">
-  <header><code>$(ConvertTo-HtmlEncoded $item.Id)</code><span class="item-kind kind-$kindClass">$itemKindLabel</span><span class="advisory-status">$statusLabel</span></header>
-  <h3>$(ConvertTo-HtmlEncoded $item.Title)</h3>
-  $levelMarkup
-  <p><b>$dateLabel :</b> $(ConvertTo-HtmlEncoded $item.PublishedDateDisplay)</p>
-  <p>$(ConvertTo-HtmlEncoded $item.Explanation)</p>
-  <p class="result-summary"><b>Résultat :</b> $(ConvertTo-HtmlEncoded $item.ResultSummary)</p>
-  $details
-  $recommendationMarkup
-  <p class="data-source"><b>Source :</b> $(ConvertTo-HtmlEncoded $item.DataSource)</p>
-</article>
+<tr class="control-table-row advisory-table-row $($type.ToLowerInvariant()) $($item.Status.ToLowerInvariant())">
+  <td colspan="3">
+    <details class="control-entry advisory-entry">
+      <summary>
+        <span class="control-id"><span class="row-chevron" aria-hidden="true"></span><code>$(ConvertTo-HtmlEncoded $item.Id)</code></span>
+        <span class="control-title">$(ConvertTo-HtmlEncoded $item.Title)</span>
+        <span class="control-state">$statusMarkup<span class="state-label">$statusLabel</span></span>
+      </summary>
+      <div class="control-detail advisory-detail">
+        <p class="advisory-metadata">$levelMarkup<b>$dateLabel :</b> $(ConvertTo-HtmlEncoded $item.PublishedDateDisplay) · <b>Type :</b> $(ConvertTo-HtmlEncoded $itemKindLabel) · <b>Source :</b> $(ConvertTo-HtmlEncoded $item.DataSource)</p>
+        <p class="result-summary"><b>Résultat :</b> $(ConvertTo-HtmlEncoded $item.ResultSummary)</p>
+        <details class="control-subdetail"><summary>Constats ($($item.FindingCount))</summary><div class="subdetail-content">$findingContent</div></details>
+        <details class="control-subdetail"><summary>Description détaillée</summary><div class="subdetail-content"><p>$(ConvertTo-HtmlEncoded $item.Explanation)</p></div></details>
+        $recommendationMarkup
+      </div>
+    </details>
+  </td>
+</tr>
 "@
         }
         @"
 <section class="advisory-section" id="$($type.ToLowerInvariant())s">
-  <header class="level-heading"><div><h2>$label ANSSI</h2></div><p><b>$($items.Count) item(s)</b> · sans effet sur la note</p></header>
-  <div class="advisories">$($cards -join "`n")</div>
+  <header class="level-heading"><div><div><h2>$label</h2><p class="level-description">$sectionDescription</p></div></div><p><b>$($items.Count) item(s)</b> · sans effet sur la note</p></header>
+  <div class="control-table-wrap"><table class="control-table advisory-table"><thead><tr><th>ID de l’item</th><th>Description</th><th>État</th></tr></thead><tbody>$($rows -join "`n")</tbody></table></div>
 </section>
 "@
     }
@@ -945,6 +986,10 @@ main{max-width:1180px;margin:auto;padding:28px}.summary{display:flex;gap:16px;fl
 .level-section{margin-top:34px;scroll-margin-top:12px}.level-heading{display:flex;justify-content:space-between;align-items:end;gap:18px;border-bottom:2px solid #dce1e8;margin-bottom:16px;padding-bottom:10px}
 .level-heading>div{display:flex;align-items:center;gap:10px}.level-heading h2,.level-heading p{margin:0}.level-heading .level{font-size:1.25rem}
 @media(max-width:700px){.level-heading{align-items:start;flex-direction:column}.controls{grid-template-columns:1fr}}
+.level-overview{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px;margin:22px 0}.level-overview-item{display:flex;align-items:center;gap:10px;min-width:0;padding:13px;background:#fff;color:#172033;text-decoration:none;border-radius:9px;box-shadow:0 2px 8px #0001}.level-overview-item span:last-child{min-width:0}.level-overview-item b,.level-overview-item strong{display:block}.level-overview-item strong{margin-top:3px;font-size:.9rem}.level-description{margin:5px 0 0;color:#667085;font-size:.92rem;font-weight:400}
+.control-table-wrap{overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 12px #0001}.control-table{width:100%;border-collapse:collapse;table-layout:fixed}.control-table th{text-align:left;padding:11px 14px;background:#e9edf3;border-bottom:2px solid #cfd6df}.control-table th:first-child{width:31%}.control-table th:last-child{width:72px;text-align:center}.control-table-row>td{padding:0;border-bottom:1px solid #dce1e8}.control-table-row:last-child>td{border-bottom:0}.control-table-row.failed>td{background:#fff3f3}.control-entry>summary{display:grid;grid-template-columns:minmax(190px,31%) minmax(240px,1fr) 72px;align-items:center;gap:0;min-height:48px;cursor:pointer;list-style:none}.control-entry>summary::-webkit-details-marker{display:none}.control-entry>summary>span{padding:11px 14px;min-width:0;box-sizing:border-box}.control-id{display:flex;align-items:center;gap:8px;overflow-wrap:anywhere}.control-id code{white-space:normal;word-break:break-word}.control-title{font-weight:600}.control-state{text-align:center}.row-chevron:before{content:'▶';display:inline-block;font-size:.72rem;transition:transform .15s}.control-entry[open] .row-chevron:before{transform:rotate(90deg)}.control-detail{padding:4px 18px 18px 42px;border-top:1px solid #e1e5eb;background:#fafbfd}.control-table-row.failed .control-detail{background:#fff8f8}.control-subdetail{margin:10px 0;border:1px solid #d7dde6;border-radius:7px;background:#fff}.control-subdetail>summary{cursor:pointer;padding:10px 12px;font-weight:700}.subdetail-content,.control-subdetail .guidance-content{padding:0 12px 12px}.control-detail .recommendation{margin-top:12px}
+@media(max-width:900px){.level-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.control-table thead{display:none}.control-table-wrap{overflow:visible}.control-entry>summary{grid-template-columns:minmax(0,1fr) 52px}.control-title{grid-column:1/-1;grid-row:2;padding-top:0!important}.control-state{grid-column:2;grid-row:1}.control-detail{padding:4px 12px 14px}.level-overview{grid-template-columns:1fr}.level-heading>div{align-items:flex-start}}
+.advisory-table-row.warning.detected>td{background:#fff5df}.advisory-table-row.information>td{background:#f5faff}.advisory-table-row.dataunavailable>td{background:#f6f7f9}.advisory-table-row.warning.detected .advisory-detail{background:#fffbf1}.advisory-table-row.information .advisory-detail{background:#f8fcff}.advisory-detected{background:#fff0c2;color:#8a6100}.advisory-observed{background:#dceeff;color:#135b8a}.control-state .state-label{display:block;margin-top:3px;font-size:.72rem;font-weight:700}.advisory-metadata{overflow-wrap:anywhere}
 .footer{margin-top:42px;padding:20px 0;border-top:1px solid #d7dde6;color:#667085;text-align:center}
 @media(max-width:760px){.hero-grid{grid-template-columns:auto 1fr}.hero-score{grid-column:1/-1}.brand-mark{width:82px;height:94px}}
 </style></head>
@@ -979,7 +1024,7 @@ main{max-width:1180px;margin:auto;padding:28px}.summary{display:flex;gap:16px;fl
 <main><p class="notice">Réimplémentation indépendante fondée sur les données ORADAD et les contrôles publics de l'ANSSI. Ce rapport n'est ni produit ni certifié par l'ANSSI. Le score en points est une estimation ADS-Open : le barème officiel ADS n'est pas public.</p>
 <section class="legend"><b>Échelle ANSSI :</b><span class="level level1">1</span><span class="label">Critique</span><span class="level level2">2</span><span class="level level3">3</span><span class="level level4">4</span><span class="level level5">5</span><span class="label">Maîtrisé</span></section>
 <section class="summary"><div><b>$($Audit.Score.Failed)</b><br>Échecs</div><div><b>$($Audit.Score.Passed)</b><br>Validés</div><div><b>$($Audit.Score.NotEvaluated)</b><br>Non évalués</div><div><b>$($Audit.Controls.Count)</b><br>Vulnérabilités</div><div><b>$(@($Audit.Advisories | Where-Object Type -eq 'Warning').Count)</b><br>Avertissements</div><div><b>$(@($Audit.Advisories | Where-Object Type -eq 'Information').Count)</b><br>Informations</div></section>
-<nav class="level-nav" aria-label="Accès aux niveaux ANSSI"><a href="#niveau-1"><span class="level level1">1</span>Niveau 1</a><a href="#niveau-2"><span class="level level2">2</span>Niveau 2</a><a href="#niveau-3"><span class="level level3">3</span>Niveau 3</a><a href="#niveau-4"><span class="level level4">4</span>Niveau 4</a><a href="#niveau-5"><span class="level level5">5</span>Niveau 5</a></nav>
+<section class="level-overview" aria-label="Échecs par niveau ANSSI">$($levelOverview -join "`n")</section>
 $($sections -join "`n")
 <section class="advisory-intro"><h2>Observations complémentaires ANSSI</h2><p>Ces avertissements et informations sont présentés à titre contextuel. Ils ne produisent aucun échec et ne modifient ni le niveau ni les points cumulés.</p></section>
 $($advisorySections -join "`n")
