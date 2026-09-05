@@ -272,7 +272,7 @@ foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
             $roots=@($sysvol|Where-Object{$_.filename-match'^{[0-9A-Fa-f-]{36}}$'});$findings=@($roots|ForEach-Object{$r=$_;$sd=Convert-ADSOpenHexDescriptor ([string]$r.securitydescriptor);if(-not$sd-or-not$sd.DiscretionaryAcl){[pscustomobject]@{path=$r.path;filename=$r.filename;Reason='Descripteur absent ou indécodable'}}});$source="$prefix\sysvol.tsv";$explanation='Vérifie les descripteurs des répertoires racines de GPO.'
         }
         'warning_tool_version' {
-            $v=[string]$metadata['oradad_version'];$parsed=$null;try{$parsed=[version]($v-replace'[^0-9.]','')}catch{};if(-not$parsed-or$parsed-lt[version]'3.6.0.220'){$findings=@([pscustomobject]@{DetectedVersion=$v;MinimumSupportedVersion='3.6.0.220'})};$source='metadata.tsv';$explanation='Vérifie que la version ORADAD est connue et suffisamment récente.'
+            $v=[string]$metadata['oradad_version'];$parsed=$null;try{$parsed=[version]($v-replace'[^0-9.]','')}catch{};if(-not$parsed-or$parsed-lt[version]$script:MinimumSupportedOradadVersion){$findings=@([pscustomobject]@{DetectedVersion=$v;MinimumSupportedVersion=$script:MinimumSupportedOradadVersion})};$source='metadata.tsv';$explanation='Vérifie que la version ORADAD est connue et suffisamment récente.'
         }
         'warning_trusts_tgt_deleg' {
             $findings=@($tgtDeleg);$source="$prefix\trustedDomain.tsv";$explanation='Recherche les approbations entrantes autorisant la délégation TGT.'

@@ -11,10 +11,16 @@ try {
     if (-not (Test-Path (Join-Path $out 'report.json'))) { throw 'report.json absent' }
     if (-not (Test-Path (Join-Path $out 'report.html'))) { throw 'report.html absent' }
     $report = Get-Content (Join-Path $out 'report.json') -Raw | ConvertFrom-Json
-    if ($report.Version -ne '1.6.0') { throw "Version ADS-Open inattendue: $($report.Version)" }
+    if ($report.Version -ne '1.7.0') { throw "Version ADS-Open inattendue: $($report.Version)" }
     $html = Get-Content (Join-Path $out 'report.html') -Raw
-    if ($html -notmatch 'Version ADS-Open</span><b>v1\.6\.0</b>') {
+    if ($html -notmatch 'Version ADS-Open</span><b>v1\.7\.0</b>') {
         throw 'Version ADS-Open absente de l''en-tête HTML'
+    }
+    if ($report.OradadVersion -ne '3.6.0.220' -or $report.MinimumSupportedOradadVersion -ne '3.6.0.220' -or $report.ReferenceTestedOradadVersion -ne '3.6.0.220') {
+        throw 'Informations de compatibilité ORADAD invalides'
+    }
+    if ($html -notmatch 'Collecte ORADAD</span><b>v3\.6\.0\.220</b>' -or $html -notmatch 'Compatibilité ORADAD</span><b>≥ v3\.6\.0\.220</b>') {
+        throw 'Compatibilité ORADAD absente de l''en-tête HTML'
     }
     if ($report.Advisories.Count -ne 51) { throw "Nombre total dʼobservations complémentaires inattendu: $($report.Advisories.Count)/51" }
     if (@($report.Advisories | Where-Object { $_.Type -eq 'Warning' -and $_.Origin -eq 'ANSSI' }).Count -ne 37) { throw 'Nombre d''avertissements ANSSI invalide' }

@@ -1,6 +1,8 @@
 ﻿Set-StrictMode -Version 2.0
 
-$script:ADSOpenVersion = '1.6.0'
+$script:ADSOpenVersion = '1.7.0'
+$script:MinimumSupportedOradadVersion = '3.6.0.220'
+$script:ReferenceTestedOradadVersion = '3.6.0.220'
 
 . (Join-Path $PSScriptRoot 'ControlLoader.ps1')
 
@@ -1018,6 +1020,9 @@ main{max-width:1180px;margin:auto;padding:28px}.summary{display:flex;gap:16px;fl
   <div><span>Utilisateurs</span><b>$(ConvertTo-HtmlEncoded $Audit.UserCount)</b></div>
   <div><span>Ordinateurs</span><b>$(ConvertTo-HtmlEncoded $Audit.ComputerCount)</b></div>
   <div><span>Version ADS-Open</span><b>v$(ConvertTo-HtmlEncoded $Audit.Version)</b></div>
+  <div><span>Collecte ORADAD</span><b>v$(ConvertTo-HtmlEncoded $Audit.OradadVersion)</b></div>
+  <div title="Version minimale acceptée par le moteur"><span>Compatibilité ORADAD</span><b>≥ v$(ConvertTo-HtmlEncoded $Audit.MinimumSupportedOradadVersion)</b></div>
+  <div><span>Référence ORADAD testée</span><b>v$(ConvertTo-HtmlEncoded $Audit.ReferenceTestedOradadVersion)</b></div>
   <div title="$(ConvertTo-HtmlEncoded $Audit.Score.SuccessPointsMethod)"><span>Points cumulés validés</span><b>$(ConvertTo-HtmlEncoded $Audit.Score.SuccessPoints) pts</b></div>
   <div><span>Généré le</span><b>$(ConvertTo-HtmlEncoded $Audit.GeneratedDisplay)</b></div>
 </div></section>
@@ -1088,6 +1093,8 @@ function Invoke-ADSOpenAudit {
         ComputerCount  = $auditComputers.Count
         GeneratedDisplay = (Get-Date).ToString('dd/MM/yyyy HH:mm')
         OradadVersion = $metadata.oradad_version
+        MinimumSupportedOradadVersion = $script:MinimumSupportedOradadVersion
+        ReferenceTestedOradadVersion = $script:ReferenceTestedOradadVersion
         Score         = $score
         Controls      = $controls
         Advisories    = $advisories

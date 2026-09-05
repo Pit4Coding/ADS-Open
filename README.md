@@ -10,6 +10,7 @@ niveau global de 1 à 5 et génère un rapport HTML et JSON.
 ## Prérequis
 
 - Windows PowerShell 5.1 ou PowerShell 7+
+- ORADAD 3.6.0.220 ou version ultérieure (version de référence testée : 3.6.0.220)
 - aucun module Active Directory requis
 
 ## Utilisation
