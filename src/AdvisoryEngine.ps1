@@ -174,6 +174,23 @@ foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
             $findings=@($privilegedAccounts|Where-Object{$_.scriptPath}|Select-Object dn,sAMAccountName,scriptPath)
             $source="$prefix\user.tsv";$explanation='Recherche un script de connexion configuré sur un compte privilégié.'
         }
+        'warning_misc_metadata_date' {
+            $findings = @($allObjects | ForEach-Object {
+                $object = $_
+                $created = Convert-OradadDate ([string]$object.whenCreated)
+                $changed = Convert-OradadDate ([string]$object.whenChanged)
+                if (($created -and $created -gt $now) -or ($changed -and $changed -gt $now)) {
+                    [pscustomobject]@{
+                        dn = $object.dn
+                        whenCreated = $object.whenCreated
+                        whenChanged = $object.whenChanged
+                    }
+                }
+            })
+            $source = "$prefix\top.tsv; configuration\top.tsv; schema\top.tsv"
+            $explanation = 'Recherche les objets Active Directory dont la date de création (whenCreated) ou de dernière modification (whenChanged) est postérieure à la date de lʼanalyse. Une telle incohérence peut révéler une désynchronisation dʼhorloge ou une manipulation volontaire des horodatages.'
+            $recommendation = 'Vérifier la synchronisation temporelle de tous les contrôleurs de domaine (hiérarchie NTP et service W32Time), puis investiguer spécifiquement les objets concernés afin dʼécarter une manipulation malveillante.'
+        }
         'warning_password_change' {
             $limit=$now.AddYears(-3);$findings=@($activeUsers|Where-Object{$_.pwdLastSet-and(Convert-OradadDate $_.pwdLastSet)-lt$limit}|Select-Object dn,sAMAccountName,pwdLastSet)
             $source="$prefix\user.tsv";$explanation='Recherche les comptes actifs dont le mot de passe nʼa pas changé depuis trois ans.'

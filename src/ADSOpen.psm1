@@ -1,6 +1,6 @@
 ﻿Set-StrictMode -Version 2.0
 
-$script:ADSOpenVersion = '1.7.0'
+$script:ADSOpenVersion = '1.8.0'
 $script:MinimumSupportedOradadVersion = '3.6.0.220'
 $script:ReferenceTestedOradadVersion = '3.6.0.220'
 

@@ -52,7 +52,7 @@ internes non publiées du service ADS.
 
 - 76 vulnérabilités ANSSI (`vuln_*`), seules susceptibles de produire un échec et
   d'influencer le niveau global ou les points cumulés ;
-- 37 avertissements ANSSI (`warning_*`) et les avertissements complémentaires ADS-Open,
+- 38 avertissements ANSSI (`warning_*`) et les avertissements complémentaires ADS-Open,
   dont `warning_adsopen_passwd_notreqd`, sans effet sur la note ;
 - 13 informations (`info_*`), également sans effet sur la note.
 
