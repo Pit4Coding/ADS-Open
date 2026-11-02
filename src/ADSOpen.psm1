@@ -1,6 +1,6 @@
 ﻿Set-StrictMode -Version 2.0
 
-$script:ADSOpenVersion = '1.8.0'
+$script:ADSOpenVersion = '1.9.0'
 $script:MinimumSupportedOradadVersion = '3.6.0.220'
 $script:ReferenceTestedOradadVersion = '3.6.0.220'
 
@@ -797,6 +797,44 @@ function ConvertTo-AnssiGuidanceHtml {
     }
     return ($markup -join "`n")
 }
+function ConvertTo-FindingsTableHtml {
+    param(
+        [object[]]$Findings,
+        [int]$Limit = 100,
+        [string]$EmptyMessage = 'Aucun constat.'
+    )
+    $rows = @($Findings | Select-Object -First $Limit)
+    if ($rows.Count -eq 0) { return "<p>$(ConvertTo-HtmlEncoded $EmptyMessage)</p>" }
+
+    $columns = [System.Collections.Generic.List[string]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($row in $rows) {
+        foreach ($property in $row.PSObject.Properties) {
+            if ($seen.Add([string]$property.Name)) { $columns.Add([string]$property.Name) }
+        }
+    }
+    if ($columns.Count -eq 0) {
+        return '<ul>' + (($rows | ForEach-Object { '<li>' + (ConvertTo-HtmlEncoded $_) + '</li>' }) -join '') + '</ul>'
+    }
+
+    $head = ($columns | ForEach-Object { '<th scope="col">' + (ConvertTo-HtmlEncoded $_) + '</th>' }) -join ''
+    $body = foreach ($row in $rows) {
+        $cells = foreach ($column in $columns) {
+            $property = $row.PSObject.Properties[$column]
+            $value = if ($property) { $property.Value } else { '' }
+            if ($null -ne $value -and $value -isnot [string] -and $value -is [System.Collections.IEnumerable]) {
+                $value = @($value) -join '; '
+            }
+            '<td>' + (ConvertTo-HtmlEncoded $value) + '</td>'
+        }
+        '<tr>' + ($cells -join '') + '</tr>'
+    }
+    $truncation = if ($Findings.Count -gt $Limit) {
+        '<p class="findings-truncated">Affichage limité aux ' + $Limit + ' premiers résultats sur ' + $Findings.Count + '.</p>'
+    } else { '' }
+    return '<div class="findings-table-wrap"><table class="findings-table"><thead><tr>' + $head +
+        '</tr></thead><tbody>' + ($body -join '') + '</tbody></table></div>' + $truncation
+}
 function New-ADSOpenHtml {
     param($Audit)
     $levelNames = @{
@@ -830,15 +868,7 @@ function New-ADSOpenHtml {
             $title = if ($failedClass) { "Seuil ANSSI $level en échec" } else { "Niveau ANSSI $level applicable" }
             "<span class=`"level level$level$failedClass`" title=`"$title`">$level</span>"
         }
-        $findingContent = if ($control.FindingCount) {
-            $items = foreach ($finding in @($control.Findings | Select-Object -First 100)) {
-                $findingText = ($finding.PSObject.Properties | ForEach-Object {
-                    "$(ConvertTo-HtmlEncoded $_.Name): $(ConvertTo-HtmlEncoded $_.Value)"
-                }) -join ' · '
-                "<li>$findingText</li>"
-            }
-            "<ul>$($items -join '')</ul>"
-        } else { '<p>Aucun constat.</p>' }
+        $findingContent = ConvertTo-FindingsTableHtml $control.Findings 100 'Aucun constat.'
         $rowById[$control.Id] = @"
 <tr class="control-table-row $($control.Status.ToLowerInvariant())">
   <td colspan="3">
@@ -916,13 +946,8 @@ function New-ADSOpenHtml {
                 'Observed' { '<span class="status-icon advisory-observed" role="img" aria-label="Information disponible" title="Information disponible">i</span>' }
                 default { '<span class="status-icon status-unknown" role="img" aria-label="Données indisponibles" title="Données indisponibles">?</span>' }
             }
-            $findingContent = if ($item.FindingCount) {
-                $itemsMarkup = foreach ($finding in @($item.Findings | Select-Object -First 100)) {
-                    $findingText = ($finding.PSObject.Properties | ForEach-Object { "$(ConvertTo-HtmlEncoded $_.Name): $(ConvertTo-HtmlEncoded $_.Value)" }) -join ' · '
-                    "<li>$findingText</li>"
-                }
-                "<ul>$($itemsMarkup -join '')</ul>"
-            } else { '<p>Aucun élément.</p>' }
+            $findingLimit = if ($item.Id -eq 'info_privileged_members_recent_changes') { 5000 } else { 100 }
+            $findingContent = ConvertTo-FindingsTableHtml $item.Findings $findingLimit 'Aucun élément.'
             $recommendationMarkup = if ($item.Recommendation) {
                 "<div class=`"recommendation`"><b>Recommandation</b><br>$(ConvertTo-HtmlEncoded $item.Recommendation)</div>"
             } else { '' }
@@ -990,6 +1015,7 @@ main{max-width:1180px;margin:auto;padding:28px}.summary{display:flex;gap:16px;fl
 @media(max-width:700px){.level-heading{align-items:start;flex-direction:column}.controls{grid-template-columns:1fr}}
 .level-overview{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px;margin:22px 0}.level-overview-item{display:flex;align-items:center;gap:10px;min-width:0;padding:13px;background:#fff;color:#172033;text-decoration:none;border-radius:9px;box-shadow:0 2px 8px #0001}.level-overview-item span:last-child{min-width:0}.level-overview-item b,.level-overview-item strong{display:block}.level-overview-item strong{margin-top:3px;font-size:.9rem}.level-description{margin:5px 0 0;color:#667085;font-size:.92rem;font-weight:400}
 .control-table-wrap{overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 12px #0001}.control-table{width:100%;border-collapse:collapse;table-layout:fixed}.control-table th{text-align:left;padding:11px 14px;background:#e9edf3;border-bottom:2px solid #cfd6df}.control-table th:first-child{width:31%}.control-table th:last-child{width:72px;text-align:center}.control-table-row>td{padding:0;border-bottom:1px solid #dce1e8}.control-table-row:last-child>td{border-bottom:0}.control-table-row.failed>td{background:#fff3f3}.control-entry>summary{display:grid;grid-template-columns:minmax(190px,31%) minmax(240px,1fr) 72px;align-items:center;gap:0;min-height:48px;cursor:pointer;list-style:none}.control-entry>summary::-webkit-details-marker{display:none}.control-entry>summary>span{padding:11px 14px;min-width:0;box-sizing:border-box}.control-id{display:flex;align-items:center;gap:8px;overflow-wrap:anywhere}.control-id code{white-space:normal;word-break:break-word}.control-title{font-weight:600}.control-state{text-align:center}.row-chevron:before{content:'▶';display:inline-block;font-size:.72rem;transition:transform .15s}.control-entry[open] .row-chevron:before{transform:rotate(90deg)}.control-detail{padding:4px 18px 18px 42px;border-top:1px solid #e1e5eb;background:#fafbfd}.control-table-row.failed .control-detail{background:#fff8f8}.control-subdetail{margin:10px 0;border:1px solid #d7dde6;border-radius:7px;background:#fff}.control-subdetail>summary{cursor:pointer;padding:10px 12px;font-weight:700}.subdetail-content,.control-subdetail .guidance-content{padding:0 12px 12px}.control-detail .recommendation{margin-top:12px}
+.findings-table-wrap{max-width:100%;overflow:auto;border:1px solid #d7dde6;border-radius:7px}.findings-table{width:100%;border-collapse:collapse;font-size:.88rem}.findings-table th,.findings-table td{padding:8px 10px;border-right:1px solid #e1e5eb;border-bottom:1px solid #e1e5eb;text-align:left;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}.findings-table th{position:sticky;top:0;background:#e9edf3;white-space:nowrap}.findings-table tr:last-child td{border-bottom:0}.findings-table th:last-child,.findings-table td:last-child{border-right:0}.findings-table tbody tr:nth-child(even){background:#f8fafc}.findings-truncated{margin:8px 0 0;color:#667085;font-size:.82rem}
 @media(max-width:900px){.level-overview{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:700px){.control-table thead{display:none}.control-table-wrap{overflow:visible}.control-entry>summary{grid-template-columns:minmax(0,1fr) 52px}.control-title{grid-column:1/-1;grid-row:2;padding-top:0!important}.control-state{grid-column:2;grid-row:1}.control-detail{padding:4px 12px 14px}.level-overview{grid-template-columns:1fr}.level-heading>div{align-items:flex-start}}
 .advisory-table-row.warning.detected>td{background:#fff5df}.advisory-table-row.information>td{background:#f5faff}.advisory-table-row.dataunavailable>td{background:#f6f7f9}.advisory-table-row.warning.detected .advisory-detail{background:#fffbf1}.advisory-table-row.information .advisory-detail{background:#f8fcff}.advisory-detected{background:#fff0c2;color:#8a6100}.advisory-observed{background:#dceeff;color:#135b8a}.control-state .state-label{display:block;margin-top:3px;font-size:.72rem;font-weight:700}.advisory-metadata{overflow-wrap:anywhere}
 .footer{margin-top:42px;padding:20px 0;border-top:1px solid #d7dde6;color:#667085;text-align:center}

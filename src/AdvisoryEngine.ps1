@@ -34,7 +34,8 @@ function New-AdvisoryResult {
     $findingArray = @($Findings)
     $findingCount = $findingArray.Count
     # Conserve un échantillon vérifiable : verdict et compteur portent sur tous les résultats.
-    $findingSample = @($findingArray | Select-Object -First 200)
+    $sampleLimit = if ($Item.Id -eq 'info_privileged_members_recent_changes') { 5000 } else { 200 }
+    $findingSample = @($findingArray | Select-Object -First $sampleLimit)
     $type = [string]$Item.Type
     $status = if ($Availability -ne 'Evaluated') { 'DataUnavailable' }
         elseif ($type -eq 'Warning') { if ($findingCount) { 'Detected' } else { 'NotDetected' } }
@@ -130,8 +131,36 @@ foreach ($item in Import-Csv -LiteralPath $catalogPath -Delimiter "`t") {
             $source="$prefix\passwordSettings.tsv"; $explanation='Inventaire des politiques de mot de passe affinées présentes dans le domaine.'
         }
         'info_privileged_members_recent_changes' {
-            $limit=$now.AddDays(-30);$findings=@($privilegedGroups|ForEach-Object{$top=$topByDn[$_.dn];if($top.whenChanged-and(Convert-OradadDate $top.whenChanged)-ge$limit){[pscustomobject]@{dn=$_.dn;whenChanged=$top.whenChanged;member=$_.member}}})
-            $source="$prefix\group.tsv; $prefix\top.tsv"; $explanation='Signale les groupes privilégiés modifiés au cours des trente derniers jours.'
+            $limit = $now.ToUniversalTime().AddYears(-1)
+            $recentChanges = [System.Collections.Generic.List[object]]::new()
+            foreach ($group in $privilegedGroups) {
+                $top = $topByDn[$group.dn]
+                $metadataXml = [string]$top.'msDS-ReplValueMetaData'
+                if ([string]::IsNullOrWhiteSpace($metadataXml)) { continue }
+                foreach ($match in [regex]::Matches($metadataXml, '(?s)<DS_REPL_VALUE_META_DATA>.*?</DS_REPL_VALUE_META_DATA>')) {
+                    try { [xml]$metadataEntry = $match.Value } catch { continue }
+                    $entry = $metadataEntry.DS_REPL_VALUE_META_DATA
+                    if ([string]$entry.pszAttributeName -ne 'member') { continue }
+                    $created = Convert-OradadDate ([string]$entry.ftimeCreated)
+                    $deleted = Convert-OradadDate ([string]$entry.ftimeDeleted)
+                    $isDeleted = $deleted -and $deleted.Year -gt 1601
+                    $changeDate = if ($isDeleted) { $deleted } else { $created }
+                    if (-not $changeDate -or $changeDate.ToUniversalTime() -lt $limit) { continue }
+                    $recentChanges.Add([pscustomobject]@{
+                        Groupe = [string]$group.dn
+                        Action = $(if ($isDeleted) { 'Suppression' } else { 'Ajout' })
+                        Objet = [string]$entry.pszObjectDn
+                        Date = $changeDate.ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss') + ' UTC'
+                        Version = [string]$entry.dwVersion
+                        ControleurOrigine = [string]$entry.pszLastOriginatingDsaDN
+                    })
+                    if ($recentChanges.Count -ge 5000) { break }
+                }
+                if ($recentChanges.Count -ge 5000) { break }
+            }
+            $findings = @($recentChanges | Sort-Object Date -Descending)
+            $source="$prefix\top.tsv (msDS-ReplValueMetaData)"
+            $explanation='Liste les derniers ajouts et suppressions de membres des groupes privilégiés à partir des métadonnées de réplication Active Directory. La fenêtre est limitée à un an avant la collecte et aux 5 000 premières modifications, conformément à la fiche ANSSI. Il ne sʼagit pas dʼun journal dʼaudit exhaustif : une métadonnée de réplication décrit le dernier état connu de chaque valeur liée.'
         }
         'info_sd' {
             $findings=@($acl.Relations|Where-Object{$_.SourceSid-eq'S-1-5-7'}|Select-Object SourceSid,SourceDn,TargetDn,Right,Inherited)

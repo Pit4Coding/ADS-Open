@@ -11,9 +11,9 @@ try {
     if (-not (Test-Path (Join-Path $out 'report.json'))) { throw 'report.json absent' }
     if (-not (Test-Path (Join-Path $out 'report.html'))) { throw 'report.html absent' }
     $report = Get-Content (Join-Path $out 'report.json') -Raw | ConvertFrom-Json
-    if ($report.Version -ne '1.8.0') { throw "Version ADS-Open inattendue: $($report.Version)" }
+    if ($report.Version -ne '1.9.0') { throw "Version ADS-Open inattendue: $($report.Version)" }
     $html = Get-Content (Join-Path $out 'report.html') -Raw
-    if ($html -notmatch 'Version ADS-Open</span><b>v1\.8\.0</b>') {
+    if ($html -notmatch 'Version ADS-Open</span><b>v1\.9\.0</b>') {
         throw 'Version ADS-Open absente de l''en-tête HTML'
     }
     if ($report.OradadVersion -ne '3.6.0.220' -or $report.MinimumSupportedOradadVersion -ne '3.6.0.220' -or $report.ReferenceTestedOradadVersion -ne '3.6.0.220') {
@@ -53,6 +53,16 @@ try {
     if (([regex]::Matches($html, 'class="control-entry advisory-entry"')).Count -ne 52) { throw 'Items complémentaires dépliables incomplets' }
     if ($html -notmatch 'Avertissements ANSSI et ADS-Open' -or $html -notmatch 'Informations ANSSI') { throw 'Titres des tableaux complémentaires invalides' }
     if ($html -notmatch 'Constats \(' -or $html -notmatch 'Recommandation de résolution') { throw 'Détails dépliables ou recommandation absents' }
+    if ($html -notmatch 'class="findings-table"' -or $html -notmatch 'class="findings-table-wrap"') {
+        throw 'Les constats structurés ne sont pas restitués sous forme de tableau'
+    }
+    $recentChanges = $report.Advisories | Where-Object Id -eq 'info_privileged_members_recent_changes' | Select-Object -First 1
+    if (-not $recentChanges -or $recentChanges.DataSource -notmatch 'msDS-ReplValueMetaData') {
+        throw 'Lʼhistorique récent des groupes privilégiés nʼutilise pas les métadonnées de réplication'
+    }
+    if (@($recentChanges.Findings | Where-Object { $_.Action -in @('Ajout','Suppression') -and $_.Objet -and $_.Date }).Count -eq 0) {
+        throw 'Les ajouts et suppressions récents de membres privilégiés ne sont pas détaillés'
+    }
     if ($report.Controls.Count -ne 76) { throw 'Catalogue ANSSI incomplet' }
     if (@($report.Controls.Id | Sort-Object -Unique).Count -ne 76) { throw 'Identifiants ANSSI dupliqués' }
     if (@($report.Controls | Where-Object Status -eq 'NotEvaluated').Count -ne 0) {
